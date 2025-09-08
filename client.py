@@ -226,48 +226,71 @@ if __name__ == "__main__":
 
     server_sock = register_with_server(my_name, my_p2p_port)
 
+    # Este é o loop principal da aplicação. Ele só será interrompido pelo comando 'sair'.
     while True:
         cmd = input("Digite comando (list, desafiar <nome>, aleatorio, sair): ").strip()
-
+        
+        op = None # Reinicia a variável de oponente a cada iteração do loop
 
         if cmd == "list":
             send_json(server_sock, {"cmd": "LIST"})
             resp = recv_json_line(server_sock)
-            print(resp)
+            print("Jogadores online:", resp)
 
         elif cmd.startswith("desafiar "):
             alvo = cmd.split(" ", 1)[1]
             op = request_match(server_sock, alvo)
-            if op: break
+            # REMOVEMOS O 'BREAK'.
 
         elif cmd == "aleatorio":
             op = request_match(server_sock, None)
-            if op: break
+            # REMOVEMOS O 'BREAK'.
 
         elif cmd == "sair":
-            sys.exit(0)
+            print("Saindo...")
+            break # Este é o único break que deve existir, para encerrar o programa.
+        
+        else:
+            if cmd: # Só mostra a mensagem se o usuário digitou algo
+                print("Comando inválido.")
 
+        # --- LÓGICA DA BATALHA (AGORA DENTRO DO LOOP) ---
+        # Se uma partida foi encontrada ('op' não é None), executa a batalha.
+        if op:
+            print("Partida encontrada! Preparando para a batalha...")
+            opp_name = op["name"]
+            opp_ip = op["ip"]
+            opp_port = int(op["p2p_port"])
 
+            dial = my_name < opp_name
 
+            battle = BattleState(my_name, opp_name)
+            battle.my_turn = dial
 
-    opp_name = op["name"]
-    opp_ip = op["ip"]
-    opp_port = int(op["p2p_port"])
+            p2p_socket = None
+            try:
+                if dial:
+                    p2p_socket = p2p_dial(opp_ip, opp_port)
+                else:
+                    p2p_socket = p2p_listener(my_p2p_port, battle)
 
-    dial = my_name < opp_name
+                battle_loop(p2p_socket, battle, server_sock)
 
-    battle = BattleState(my_name, opp_name)
-    battle.my_turn = dial
+            except Exception as e:
+                print(f"Um erro ocorreu durante a preparação da batalha: {e}")
+            finally:
+                if p2p_socket:
+                    try: 
+                        p2p_socket.close()
+                    except: 
+                        pass
+            
+            print("\n--- Batalha finalizada. Retornando ao menu principal. ---\n")
+            # Ao final, o 'while True' simplesmente continua para a próxima vez,
+            # mostrando o prompt de comando novamente.
 
-    if dial:
-        p2p = p2p_dial(opp_ip, opp_port)
-    else:
-        p2p = p2p_listener(my_p2p_port, battle)
-
-    try:
-        battle_loop(p2p, battle, server_sock)
-    finally:
-        try: p2p.close()
-        except: pass
+    # O programa só chega aqui quando o usuário digita 'sair'
+    server_sock.close()
+    print("Conexão com o servidor encerrada.")
 
 
