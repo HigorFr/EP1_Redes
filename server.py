@@ -59,6 +59,8 @@ def handle_client(conn: socket.socket, addr):
             if cmd == "REGISTER":
                 name = msg.get("name")
                 p2p_port = int(msg.get("p2p_port", 0))
+
+                pk = msg.get("public_key") #<-Pego a chave pública que o cliente me enviou
                 if not name or not p2p_port:
                     send({"type":"ERR","msg":"missing_fields"})
                     continue
@@ -66,8 +68,13 @@ def handle_client(conn: socket.socket, addr):
                     if name in players:
                         send({"type":"ERR","msg":"name_in_use"})
                         continue
-                    players[name] = {"addr": addr, "p2p_port": p2p_port}
+
+                    players[name] = {"addr": addr, "public_key": pk, "p2p_port": p2p_port} #<- Salvo as informações
+
+
                 send({"type":"OK","msg":"registered"})
+                
+                
                 udp_broadcast({"type":"EVENT","sub":"JOIN","name":name})
 
 
@@ -92,14 +99,16 @@ def handle_client(conn: socket.socket, addr):
                         send({"type":"ERR","msg":"player_not_available"})
                         continue
 
-                    me_ip = players[name]["addr"][0]
-                    me_p2p = players[name]["p2p_port"]
                     op_ip = players[target]["addr"][0]
                     op_p2p = players[target]["p2p_port"]
+                    op_public_key = players[target]["public_key"] # <- Pego a chave pública do desafiado e envio para o cliente que fez o desafio
+
                 # Notifica ambos com as infos do outro
-                send({"type":"MATCH","opponent": {"name": target, "ip": op_ip, "p2p_port": op_p2p}})
-                # Tenta notificar o desafiado se ele ainda estiver conectado (melhorias: push async)
-                # Aqui, por simplicidade, apenas broadcasta o match para espectadores
+                send({"type":"MATCH","opponent": {"name": target, "ip": op_ip, "p2p_port": op_p2p, "public_key": op_public_key}})
+                #Tenta notificar o desafiado se ele ainda estiver conectado (melhorias: push async)
+                
+                
+                #Aqui, por simplicidade, apenas broadcasta o match para espectadores
                 udp_broadcast({"type":"EVENT","sub":"MATCH","p1":name,"p2":target})
 
 
@@ -117,7 +126,10 @@ def handle_client(conn: socket.socket, addr):
                     with lock:
                         op_ip = players[target]["addr"][0]
                         op_p2p = players[target]["p2p_port"]
-                    send({"type":"MATCH","opponent":{"name": target, "ip": op_ip, "p2p_port": op_p2p}})
+                    send({"type":"MATCH","opponent": {"name": target, "ip": op_ip, "p2p_port": op_p2p, "public_key": op_public_key}})
+
+
+                    
                     udp_broadcast({"type":"EVENT","sub":"MATCH","p1":name,"p2":target})
 
 
