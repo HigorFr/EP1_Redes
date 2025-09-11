@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import serialization
 import base64
 import os
-import struct
+import traceback
 
 SERVER_IP = "127.0.0.1"
 SERVER_PORT = 5000
@@ -161,62 +161,73 @@ def p2p_dial(ip, port):
 
 
 
-def battle_loop(p2p: socket.socket, battle: BattleState, server_sock: socket.socket, opp_pk, sk):
-
-
+def battle_loop(p2p: socket.socket, battle: BattleState, server_sock: socket.socket, opp_pk , sk):
 
     #descriptografar a base64 do oponente (que veio do server)
-    opp_pk_bytes = base64.b64decode(opp_pk)
-    opp_pk_obj = x25519.X25519PublicKey.from_public_bytes(opp_pk_bytes)
+
+    opp_pk_bytes = base64.b64decode(opp_pk) #voltou para bytes
+    opp_pk_obj = x25519.X25519PublicKey.from_public_bytes(opp_pk_bytes) #voltou pra objeto chave
     
     #Estabelece o segredo compartilhado
     shared_key = sk.exchange(opp_pk_obj) 
     aesgcm = AESGCM(shared_key)  #Uso da chave compartilhada para cifrar a comunicação
-
-
+    
+    #print(shared_key.hex()) debug pra ver se ta igual
+    
     p2p_file = p2p.makefile("rwb")
+
+
+
+
+
+
 
     def send_p2p(obj):
  
-        nonce = os.urandom(12)
-        line = (json.dumps(obj) + "\n").encode()
+        nonce = os.urandom(12) #O nonce aqui, sempre 12 (descobri que é convenção)
+        line = (json.dumps(obj)).encode()
         
         print(line)
         
-        cifrado = aesgcm.encrypt(nonce, line, None) 
+        # criptografa
+        cifrado = aesgcm.encrypt(nonce, line, None)
 
-        #enviar nonce + tamanho do crifrado + cifrado
-        p2p_file.write(nonce)
-        p2p_file.write(struct.pack("!I", len(cifrado)))
-        p2p_file.write(cifrado)
+        # concatena nonce + ciphertext e adiciona \n como bytes
+        mensagem = nonce + cifrado + b"\n"  
+
+        p2p_file.write(mensagem)
         p2p_file.flush()
 
-
-
-
-
-
-
-
+        
+        print("\n Mensagem enviada (base64):", mensagem)
 
     def recive_p2p():
-        nonce = p2p_file.read(12)
+
+        line = p2p_file.readline().strip() 
+        if not line:
+            print("Erro line")
+            return None
+        
+
+        nonce = line[:12]
         if not nonce:
+            print("Erro nonce")
             return None
         
-        size_bytes = p2p_file.read(4)
-        if not size_bytes:
-            return None
-        
-        size = struct.unpack("!I", size_bytes)[0]
-        buf = p2p_file.read(size)
-        if not buf:
+        dado = line[12:]
+        if not dado:
+            print("Erro dado")
             return None
         try:
-            decifrado = aesgcm.decrypt(nonce, buf, None)
+            decifrado = aesgcm.decrypt(nonce, dado, None)
             return json.loads(decifrado.decode())
+        
         except Exception:
+            print("Erro decrypt")
             return None
+
+
+
 
 
 
@@ -227,6 +238,7 @@ def battle_loop(p2p: socket.socket, battle: BattleState, server_sock: socket.soc
     while not battle.is_over():
         if battle.my_turn:
             move = input("Seu movimento: ").strip()
+            
             if move not in MOVES:
                 print("Movimento inválido. Tente novamente.")
                 continue
@@ -238,14 +250,15 @@ def battle_loop(p2p: socket.socket, battle: BattleState, server_sock: socket.soc
             battle.my_turn = False
         
         else:
-            line = recive_p2p()
-            if not line:
+            print("chegou aqui")
+            msg = recive_p2p()
+            print("chegou aqui2")
+
+            if not msg:
                 print("Conexão P2P encerrada.")
-                break
-            try:
-                msg = json.loads(line.decode())
-            except Exception:
                 continue
+            
+
             if msg.get("type") == "MOVE":
                 opp_move = msg.get("name")
                 battle.apply_move(opp_move, by_me=False)
@@ -283,18 +296,20 @@ if __name__ == "__main__":
 
     sk = x25519.X25519PrivateKey.generate()
     pk = sk.public_key()
+
     pk_bytes = pk.public_bytes(
         encoding=serialization.Encoding.Raw,
         format=serialization.PublicFormat.Raw
-    )
-    pk_b64 = base64.b64encode(pk_bytes).decode()  
+    ) #Mando para bytes
+    pk_b64 = base64.b64encode(pk_bytes).decode()   #dai de bytes para string (pra jogar no json)
 
 
+    #e aqui envia para o servidor junto com os outros dados
     server_sock = register_with_server(my_name, my_p2p_port, pk_b64)
 
 
 
-    # Este é o loop principal da aplicação. Ele só será interrompido pelo comando 'sair'.
+    #esse é o loop principal. só para com comando 'sair'.
     while True:
         cmd = input("Digite comando (list, desafiar <nome>, aleatorio, sair): ").strip()
         
@@ -332,6 +347,8 @@ if __name__ == "__main__":
             opp_port = int(op["p2p_port"])
             opp_pk = op["public_key"]
 
+  
+
             #"gambiarra" para decidir quem vai iniciar o p2p
             dial = my_name < opp_name
 
@@ -354,7 +371,7 @@ if __name__ == "__main__":
 
 
             except Exception as e:
-                print(f"Um erro ocorreu durante a preparação da batalha: {e}")
+                print(f"Um erro ocorreu durante a preparação da batalha: {e} em {traceback.print_exc()}")
             finally:
                 if p2p_socket:
                     try: 
