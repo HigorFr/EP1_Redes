@@ -172,7 +172,7 @@ def battle_loop(p2p: socket.socket, battle: BattleState, server_sock: socket.soc
     shared_key = sk.exchange(opp_pk_obj) 
     aesgcm = AESGCM(shared_key)  #Uso da chave compartilhada para cifrar a comunicação
     
-    #print(shared_key.hex()) debug pra ver se ta igual
+    print(shared_key.hex()) #debug pra ver se ta igual
     
     p2p_file = p2p.makefile("rwb")
 
@@ -186,28 +186,36 @@ def battle_loop(p2p: socket.socket, battle: BattleState, server_sock: socket.soc
  
         nonce = os.urandom(12) #O nonce aqui, sempre 12 (descobri que é convenção)
         line = (json.dumps(obj)).encode()
-        
-        print(line)
-        
+
+        print(f"\n Mensagem enviada bruta: {line}")
+
         # criptografa
         cifrado = aesgcm.encrypt(nonce, line, None)
 
         # concatena nonce + ciphertext e adiciona \n como bytes
-        mensagem = nonce + cifrado + b"\n"  
+
+
+        mensagem = nonce + cifrado #+ b"\n"  
+
+        #Precisa deixar em base64 pois um \n aleatorio pode aparecer na codificação dos bytes
 
         p2p_file.write(mensagem)
         p2p_file.flush()
 
         
-        print("\n Mensagem enviada (base64):", mensagem)
+        print(f"\n Mensagem enviada (base64) criptografada: {mensagem}" )
 
     def recive_p2p():
 
-        line = p2p_file.readline().strip() 
+
+        #Problema aqui:
+        line = p2p_file.read()
+
         if not line:
             print("Erro line")
             return None
         
+        print(f"\n Mensagem recebida (base64) criptografada: {line}")
 
         nonce = line[:12]
         if not nonce:
@@ -220,6 +228,9 @@ def battle_loop(p2p: socket.socket, battle: BattleState, server_sock: socket.soc
             return None
         try:
             decifrado = aesgcm.decrypt(nonce, dado, None)
+
+            print(f"\n Mensagem recebida bruta: {decifrado}")
+
             return json.loads(decifrado.decode())
         
         except Exception:
@@ -250,9 +261,8 @@ def battle_loop(p2p: socket.socket, battle: BattleState, server_sock: socket.soc
             battle.my_turn = False
         
         else:
-            print("chegou aqui")
+            print("Aguardando movimento do oponente...")
             msg = recive_p2p()
-            print("chegou aqui2")
 
             if not msg:
                 print("Conexão P2P encerrada.")
@@ -272,10 +282,6 @@ def battle_loop(p2p: socket.socket, battle: BattleState, server_sock: socket.soc
     else:
         print("Vencedor:", w)
     send_json(server_sock, {"cmd":"RESULT","me": battle.my_name, "opponent": battle.opp_name, "winner": w})
-
-
-
-
 
 
 
