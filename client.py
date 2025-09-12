@@ -192,30 +192,40 @@ def battle_loop(p2p: socket.socket, battle: BattleState, server_sock: socket.soc
         # criptografa
         cifrado = aesgcm.encrypt(nonce, line, None)
 
-        # concatena nonce + ciphertext e adiciona \n como bytes
-
-
-        mensagem = nonce + cifrado #+ b"\n"  
 
         #Precisa deixar em base64 pois um \n aleatorio pode aparecer na codificação dos bytes
+        msg_b64 = base64.b64encode(nonce + cifrado)
 
-        p2p_file.write(mensagem)
+        # concatena nonce + ciphertext e adiciona \n como bytes\
+        msg = msg_b64 + b"\n"  
+
+        p2p_file.write(msg)
         p2p_file.flush()
 
         
-        print(f"\n Mensagem enviada (base64) criptografada: {mensagem}" )
+        print(f"\n Mensagem enviada (base64) criptografada: {msg}" )
 
     def recive_p2p():
 
-
         #Problema aqui:
-        line = p2p_file.read()
+        line_b64 = p2p_file.readline().strip() 
 
-        if not line:
+        if not line_b64:
             print("Erro line")
             return None
         
-        print(f"\n Mensagem recebida (base64) criptografada: {line}")
+
+        print(f"\n Mensagem recebida (base64) criptografada: {line_b64}")
+
+
+        try:
+            line = base64.b64decode(line_b64)
+        except Exception as e:
+            print("Erro base64 ")
+            traceback.print_exc()
+            return None
+
+
 
         nonce = line[:12]
         if not nonce:
