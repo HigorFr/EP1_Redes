@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import serialization
 import base64
 import os
-import traceback
+from time import sleep
 
 SERVER_IP = "127.0.0.1"
 SERVER_PORT = 5000
@@ -58,7 +58,6 @@ class BattleState:
         if self.opp_hp <= 0:
             return self.my_name
         return None
-
 
 
 
@@ -143,6 +142,7 @@ def p2p_listener(port, battle: BattleState):
 
     listener.bind(("0.0.0.0", port))
     listener.listen(1)
+    listener.settimeout(10) #Tempo para aceitar a conexão
     conn, addr = listener.accept()
     listener.close()
     print(f"[P2P] Conectado com {addr}")
@@ -222,7 +222,6 @@ def battle_loop(p2p: socket.socket, battle: BattleState, server_sock: socket.soc
             line = base64.b64decode(line_b64)
         except Exception as e:
             print("Erro base64 ")
-            traceback.print_exc()
             return None
 
 
@@ -246,7 +245,6 @@ def battle_loop(p2p: socket.socket, battle: BattleState, server_sock: socket.soc
         except Exception:
             print("Erro decrypt")
             return None
-
 
 
 
@@ -296,6 +294,40 @@ def battle_loop(p2p: socket.socket, battle: BattleState, server_sock: socket.soc
 
 
 
+def batalha_handler(my_name, my_p2p_port, sk, server_sock, op, dial):
+    opp_name = op["name"]
+    opp_ip = op["ip"]
+    opp_port = int(op["p2p_port"])
+    opp_pk = op["public_key"]
+
+    battle = BattleState(my_name, opp_name)
+    
+    battle.my_turn = dial
+
+    p2p_socket = None
+
+    try:
+        if dial:
+            print("Batalha aceita...")
+            p2p_socket = p2p_dial(opp_ip, opp_port)
+        else:
+            print("Jogador Encontrado! Esperando resposta do adversário...")
+            p2p_socket = p2p_listener(my_p2p_port, battle)
+
+        battle_loop(p2p_socket, battle, server_sock, opp_pk, sk)
+
+
+    except Exception as e:
+        print(f"Um erro ocorreu durante a preparação da batalha: {e}")
+    finally:
+        if p2p_socket:
+            try: 
+                p2p_socket.close()
+            except: 
+                print(e)
+                pass
+
+
 
 
 if __name__ == "__main__":
@@ -324,7 +356,6 @@ if __name__ == "__main__":
     server_sock = register_with_server(my_name, my_p2p_port, pk_b64)
 
 
-
     #esse é o loop principal. só para com comando 'sair'.
     while True:
         cmd = input("Digite comando (list, desafiar <nome>, aleatorio, sair): ").strip()
@@ -336,14 +367,34 @@ if __name__ == "__main__":
             resp = recv_json_line(server_sock)
             print("Jogadores online:", resp)
 
+
+
+
         elif cmd.startswith("desafiar "):
             alvo = cmd.split(" ", 1)[1]
+            if my_name == alvo:
+                print("Você não pode se desafiar.")
+                continue
+
             op = request_match(server_sock, alvo)
+            batalha_handler(my_name, my_p2p_port, sk, server_sock, op, dial=False)
             # REMOVEMOS O 'BREAK'.
+
+
 
         elif cmd == "aleatorio":
             op = request_match(server_sock, None)
+            batalha_handler(my_name, my_p2p_port, sk, server_sock, op, dial=False)
             # REMOVEMOS O 'BREAK'.
+
+
+
+        elif  cmd.startswith("aceitar "):
+            alvo = cmd.split(" ", 1)[1]
+            op = request_match(server_sock, alvo)
+            batalha_handler(my_name, my_p2p_port, sk, server_sock, op, dial=True)
+
+
 
         elif cmd == "sair":
             print("Saindo...")
@@ -355,46 +406,6 @@ if __name__ == "__main__":
 
 
         #LÓGICA DA BATALHA (AGORA DENTRO DO LOOP)
-        #Se uma partida foi encontrada ('op' não é None), executa a batalha.
-        if op:
-            print("Partida encontrada! Preparando para a batalha...")
-            opp_name = op["name"]
-            opp_ip = op["ip"]
-            opp_port = int(op["p2p_port"])
-            opp_pk = op["public_key"]
-
-  
-
-            #"gambiarra" para decidir quem vai iniciar o p2p
-            dial = my_name < opp_name
-
-            battle = BattleState(my_name, opp_name)
-            
-
-
-            #arrumar isso, quem inciia é quem tem o nome "menor" invés de velocidade do pokemon
-            battle.my_turn = dial
-
-            p2p_socket = None
-            try:
-                if dial:
-                    p2p_socket = p2p_dial(opp_ip, opp_port)
-                else:
-                    p2p_socket = p2p_listener(my_p2p_port, battle)
-
-                battle_loop(p2p_socket, battle, server_sock, opp_pk, sk)
-
-
-
-            except Exception as e:
-                print(f"Um erro ocorreu durante a preparação da batalha: {e} em {traceback.print_exc()}")
-            finally:
-                if p2p_socket:
-                    try: 
-                        p2p_socket.close()
-                    except: 
-                        print(e)
-                        pass
             
             print("\n--- Batalha finalizada. Retornando ao menu principal. ---\n")
             # Ao final, o 'while True' simplesmente continua para a próxima vez,
