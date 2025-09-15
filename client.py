@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import serialization
 import base64
 import os
-import time ### NOVO ###
+import time
 
 SERVER_IP = "127.0.0.1"
 SERVER_PORT = 5000
@@ -22,8 +22,11 @@ MOVES = {
     "Thunderbolt": 25,
     "QuickAttack": 12,
     "Flamethrower": 25,
+    "instakill": 100, # Ataque para facilitar os testes
 }
 
+# (O resto do seu código BattleState, udp_listener, send_keepalive, etc. continua igual)
+# (Vou omitir para ser breve, mas ele deve permanecer no seu arquivo)
 class BattleState:
     def __init__(self, my_name, opp_name):
         self.my_name = my_name
@@ -67,12 +70,7 @@ def udp_listener():
             except Exception:
                 pass
 
-### Função para enviar keepalives ###
 def send_keepalive(sock):
-    """
-    Roda em uma thread separada para enviar mensagens periódicas ao servidor
-    e manter a conexão viva.
-    """
     while True:
         try:
             time.sleep(20) # Envia a cada 20 segundos
@@ -83,21 +81,23 @@ def send_keepalive(sock):
             break
 
 def send_json(sock, obj):
-    line = (json.dumps(obj) + "\n").encode()
-    sock.sendall(line)
+    try:
+        line = (json.dumps(obj) + "\n").encode()
+        sock.sendall(line)
+        return True
+    except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+        return False
 
 def recv_json_line(sock):
     buf = b""
     while True:
         try:
             ch = sock.recv(1)
-            if not ch:
-                return None
-            if ch == b"\n":
-                break
+            if not ch: return None
+            if ch == b"\n": break
             buf += ch
-        except (ConnectionAbortedError, ConnectionResetError):
-            return None # Retorna None se a conexão for fechada
+        except (ConnectionAbortedError, ConnectionResetError, OSError):
+            return None
     try:
         return json.loads(buf.decode())
     except Exception:
@@ -108,46 +108,26 @@ def register_with_server(name, p2p_port, pk_b64):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((SERVER_IP, SERVER_PORT))
     except ConnectionRefusedError:
-        print("[CLIENT] Erro: Não foi possível conectar ao servidor. Verifique se ele está online.")
-        sys.exit(1)
+        print("[CLIENT] Erro: Não foi possível conectar ao servidor.")
+        return None
         
-    send_json(s, {"cmd":"REGISTER", "name": name, "p2p_port": p2p_port, "public_key": pk_b64})
+    if not send_json(s, {"cmd":"REGISTER", "name": name, "p2p_port": p2p_port, "public_key": pk_b64}):
+        print("Falha ao enviar registro para o servidor.")
+        return None
+        
     resp = recv_json_line(s)
-    if not resp or resp.get("type") != "OK":
+    if resp is None or resp.get("type") != "OK":
         print("Falha ao registrar:", resp)
-        sys.exit(1)
+        return None
     
     print("[CLIENT] Registrado com sucesso no servidor.")
     return s
-
-def request_match(sock, target=None):
-    if target:
-        send_json(sock, {"cmd":"CHALLENGE","target": target})
-    else:
-        send_json(sock, {"cmd":"MATCH_RANDOM"})
-
-    # Não precisa de um loop aqui, o servidor responderá com MATCH ou ERR
-    resp = recv_json_line(sock)
-    if not resp:
-        print("[CLIENT] Servidor encerrou a conexão.")
-        return None
-    
-    if resp.get("type") == "MATCH":
-        return resp["opponent"]
-    elif resp.get("type") == "ERR":
-        print("Erro do servidor:", resp.get("msg", "Erro desconhecido"))
-        return None
-    else:
-        print("Resposta inesperada do servidor:", resp)
-        return None
 
 def p2p_listener(port, battle: BattleState):
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     listener.bind(("0.0.0.0", port))
     listener.listen(1)
-    
-    # Adicionamos um timeout para não ficar esperando para sempre
     listener.settimeout(20.0)
     try:
         conn, addr = listener.accept()
@@ -158,7 +138,6 @@ def p2p_listener(port, battle: BattleState):
         return None
     finally:
         listener.close()
-
 
 def p2p_dial(ip, port):
     try:
@@ -175,7 +154,6 @@ def battle_loop(p2p: socket.socket, battle: BattleState, server_sock: socket.soc
     opp_pk_obj = x25519.X25519PublicKey.from_public_bytes(opp_pk_bytes)
     shared_key = sk.exchange(opp_pk_obj)
     aesgcm = AESGCM(shared_key)
-    
     p2p_file = p2p.makefile("rwb")
 
     def send_p2p(obj):
@@ -189,12 +167,10 @@ def battle_loop(p2p: socket.socket, battle: BattleState, server_sock: socket.soc
 
     def receive_p2p():
         line_b64 = p2p_file.readline().strip()
-        if not line_b64:
-            return None
+        if not line_b64: return None
         try:
             line = base64.b64decode(line_b64)
-            nonce = line[:12]
-            dado = line[12:]
+            nonce, dado = line[:12], line[12:]
             decifrado = aesgcm.decrypt(nonce, dado, None)
             return json.loads(decifrado.decode())
         except Exception:
@@ -208,8 +184,7 @@ def battle_loop(p2p: socket.socket, battle: BattleState, server_sock: socket.soc
         if battle.my_turn:
             move = input("Seu movimento: ").strip()
             if move not in MOVES:
-                print("Movimento inválido. Tente novamente.")
-                continue
+                print("Movimento inválido."); continue
             send_p2p({"type":"MOVE","name": move})
             battle.apply_move(move, by_me=True)
             print(f"Você usou {move}! HP do oponente: {battle.opp_hp}")
@@ -218,57 +193,38 @@ def battle_loop(p2p: socket.socket, battle: BattleState, server_sock: socket.soc
             print("Aguardando movimento do oponente...")
             msg = receive_p2p()
             if not msg:
-                print("Oponente se desconectou.")
-                break
+                print("Oponente se desconectou."); break
             if msg.get("type") == "MOVE":
                 opp_move = msg.get("name")
                 battle.apply_move(opp_move, by_me=False)
                 print(f"Oponente usou {opp_move}! Seu HP: {battle.my_hp}")
                 battle.my_turn = True
-
     w = battle.winner()
-    if w == "draw":
-        print("Empate!")
-    else:
-        print("Vencedor:", w)
+    if w == "draw": print("Empate!")
+    else: print("Vencedor:", w)
     send_json(server_sock, {"cmd":"RESULT","me": battle.my_name, "opponent": battle.opp_name, "winner": w})
 
-
 def batalha_handler(my_name, my_p2p_port, sk, server_sock, op, dial):
-    if not op:
-        print("[CLIENT] Falha ao encontrar oponente.")
-        return
-
-    opp_name = op["name"]
-    opp_ip = op["ip"]
-    opp_port = int(op["p2p_port"])
-    opp_pk = op["public_key"]
-
+    if not op: return
+    opp_name, opp_ip, opp_port, opp_pk = op["name"], op["ip"], int(op["p2p_port"]), op["public_key"]
     battle = BattleState(my_name, opp_name)
     battle.my_turn = dial
-
     p2p_socket = None
     try:
         if dial:
-            print("Aceitando desafio...")
             p2p_socket = p2p_dial(opp_ip, opp_port)
         else:
-            print("Jogador Encontrado! Esperando oponente se conectar...")
             p2p_socket = p2p_listener(my_p2p_port, battle)
-
         if p2p_socket:
             battle_loop(p2p_socket, battle, server_sock, opp_pk, sk)
         else:
-            print("Não foi possível estabelecer a conexão P2P para a batalha.")
-
+            print("Não foi possível estabelecer a conexão P2P.")
     except Exception as e:
         print(f"Um erro ocorreu durante a batalha: {e}")
     finally:
         if p2p_socket:
-            try:
-                p2p_socket.close()
-            except:
-                pass
+            try: p2p_socket.close()
+            except: pass
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
@@ -277,62 +233,84 @@ if __name__ == "__main__":
 
     my_name = sys.argv[1]
     my_p2p_port = int(sys.argv[2])
-
-    threading.Thread(target=udp_listener, daemon=True).start()
-
     sk = x25519.X25519PrivateKey.generate()
     pk = sk.public_key()
     pk_bytes = pk.public_bytes(encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw)
     pk_b64 = base64.b64encode(pk_bytes).decode()
-
     server_sock = register_with_server(my_name, my_p2p_port, pk_b64)
+    if not server_sock:
+        sys.exit(1)
 
-    ### Inicia a thread de keepalive ###
-    keepalive_thread = threading.Thread(target=send_keepalive, args=(server_sock,), daemon=True)
-    keepalive_thread.start()
+    threading.Thread(target=udp_listener, daemon=True).start()
+    threading.Thread(target=send_keepalive, args=(server_sock,), daemon=True).start()
+
+    print("\n--- Bem-vindo ao Lobby! ---")
+    print("Comandos disponíveis: list, stats, desafiar <nome>, aceitar <nome>, aleatorio, sair")
+    
     
     while True:
-        cmd = input("> ").strip()
+        try:
+            cmd = input("> ").strip()
+        except KeyboardInterrupt:
+            print("\nSaindo..."); break
+        if not cmd: continue
         
-        if not cmd:
-            continue
-        
-        op = None
+        is_connection_alive = True
 
         if cmd == "list":
-            send_json(server_sock, {"cmd": "LIST"})
-            resp = recv_json_line(server_sock)
-            if resp:
-                print("Jogadores online:", resp.get("players", []))
+            if not send_json(server_sock, {"cmd": "LIST"}): is_connection_alive = False
             else:
-                print("Não foi possível obter a lista de jogadores.")
+                resp = recv_json_line(server_sock)
+                if resp is None: is_connection_alive = False
+                else: print("Jogadores online:", resp.get("players", []))
+        
+        ### MUDANÇA ###: Novo comando para ver o placar
+        elif cmd == "stats":
+            if not send_json(server_sock, {"cmd": "GET_STATS"}): is_connection_alive = False
+            else:
+                resp = recv_json_line(server_sock)
+                if resp is None: is_connection_alive = False
+                elif resp.get("type") == "STATS":
+                    print(f"--- Suas Estatísticas ---")
+                    print(f"  Vitórias: {resp.get('wins', 0)}")
+                    print(f"  Derrotas: {resp.get('losses', 0)}")
+                    print(f"-------------------------")
+                else:
+                    print("Erro ao obter estatísticas:", resp.get("msg"))
+        
+        elif cmd.startswith(("desafiar ", "aceitar ", "aleatorio")):
+            target, dial, op = None, False, None
+            req = {"cmd": "MATCH_RANDOM", "target": None}
+            if cmd.startswith("desafiar "):
+                target = cmd.split(" ", 1)[1]
+                if my_name == target: print("Você não pode se desafiar."); continue
+                req = {"cmd": "CHALLENGE", "target": target}
+            elif cmd.startswith("aceitar "):
+                target, dial = cmd.split(" ", 1)[1], True
+                req = {"cmd": "CHALLENGE", "target": target}
 
-        elif cmd.startswith("desafiar "):
-            alvo = cmd.split(" ", 1)[1]
-            if my_name == alvo:
-                print("Você não pode se desafiar.")
-                continue
-            op = request_match(server_sock, alvo)
-            batalha_handler(my_name, my_p2p_port, sk, server_sock, op, dial=False)
+            if not send_json(server_sock, req): is_connection_alive = False
+            else:
+                resp = recv_json_line(server_sock)
+                if resp is None: is_connection_alive = False
+                elif resp.get("type") == "MATCH": op = resp.get("opponent")
+                elif resp.get("type") == "ERR": print("Erro do servidor:", resp.get("msg", "Erro desconhecido"))
             
-        elif cmd == "aleatorio":
-            op = request_match(server_sock, None)
-            batalha_handler(my_name, my_p2p_port, sk, server_sock, op, dial=False)
-            
-        elif cmd.startswith("aceitar "):
-            alvo = cmd.split(" ", 1)[1]
-            op = request_match(server_sock, alvo)
-            batalha_handler(my_name, my_p2p_port, sk, server_sock, op, dial=True)
+            if op:
+                batalha_handler(my_name, my_p2p_port, sk, server_sock, op, dial)
+                print("\n--- Batalha finalizada. Retornando ao menu principal. ---\n")
 
         elif cmd == "sair":
-            print("Saindo...")
-            break
+            print("Saindo..."); send_json(server_sock, {"cmd": "DISCONNECT"}); break
         
         else:
-            print("Comando inválido. Comandos: list, desafiar <nome>, aceitar <nome>, aleatorio, sair")
+            ### MUDANÇA ###: Adiciona 'stats' aos comandos válidos
+            print("Comandos: list, stats, desafiar <nome>, aceitar <nome>, aleatorio, sair")
 
-        if op:
-            print("\n--- Batalha finalizada. Retornando ao menu principal. ---\n")
-
-    server_sock.close()
-    print("Conexão com o servidor encerrada.")
+        if not is_connection_alive:
+            print("\r[CLIENT] Conexão com o servidor perdida. Pressione Enter para sair.")
+            break
+            
+    try: server_sock.close()
+    except Exception: pass
+    print("Programa finalizado.")
