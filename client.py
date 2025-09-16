@@ -341,4 +341,4 @@ if __name__ == "__main__":
 
     #Falta colocar mais pokemon na base de dados
 
-    #Falta colocar um hash cumulativo para o servidor validar se é uma vitória válida ou não.
+    #Falta colocar um hash cumulativo para o servidor validar se é uma vitória válida ou não. Ou mandar cada cliente assinar o movimento que fez com a chave privada e o servidor validar com a pública quando receber os logs
