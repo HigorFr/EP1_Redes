@@ -283,8 +283,10 @@ if __name__ == "__main__":
                 servidor.send_json(server_sock, {"cmd": "LIST"})
                 print("Jogadores online:", servidor.recv_json_line(server_sock))
             
-            
-            
+          #ISSO AQUI VAI TER QUE SER ALTERADO  
+            #Falta por fila de desafios e aceites, para dar para desafiar várias pessoas ao mesmo tempo e se uma aceitar, cancela os pendentes
+            #E fila de aceite para quem recebeu o desafio escolher quem ele quer desafiar
+
             
             elif cmd.startswith("desafiar "):
                 alvo = cmd.split(" ", 1)[1]
@@ -300,6 +302,9 @@ if __name__ == "__main__":
                 batalha = Batalha(my_name, my_p2p_port, op, dial=False, rede=rede, crypto=crypto, server_sock=server_sock)
                 batalha.preparar_conexao(dial=False)
                 batalha.loop()
+          
+          
+            #ISSO TA ERRADO, coloquei só para testar
             elif cmd.startswith("aceitar "):
                 alvo = cmd.split(" ", 1)[1]
                 op = servidor.request_match(server_sock, alvo)
@@ -317,3 +322,23 @@ if __name__ == "__main__":
 
     server_sock.close()
     print("Conexão encerrada.")
+
+
+
+
+
+    #Falta implementar sistema de matchmaking automático no server (No aleatorio)
+
+    #Falta implesmentar sistema de fila de acietar ou recusar desafios
+
+    #Falta por módulo de "Contatos", ou seja, lista pessoas que você salvou a chave pública para que não precise do servidor para iniciar batalha
+
+    #Falta colocar um módulo de gerenciar escolha do pokemon
+
+    #Falta chat
+
+    #Falta interface gráfica
+
+    #Falta colocar mais pokemon na base de dados
+
+    #Falta colocar um hash cumulativo para o servidor validar se é uma vitória válida ou não.
