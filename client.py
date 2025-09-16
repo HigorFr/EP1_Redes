@@ -95,25 +95,25 @@ class Rede:
         return s
 
     @staticmethod
-    def send_p2p(obj, p2p_file, shared_key):
+    def enviar_p2p(obj, p2p_file, shared_key):
         msg = Cryptografia.criptografar_json(shared_key, obj).encode()
         p2p_file.write(msg + b"\n")
         p2p_file.flush()
 
     @staticmethod
-    def receive_p2p(p2p_file, shared_key):
+    def receber_p2p(p2p_file, shared_key):
         msg_cripto = p2p_file.readline().strip()
         return Cryptografia.descriptografar_json(shared_key, msg_cripto.decode())
 
 
 class Servidor:
     @staticmethod
-    def send_json(sock, obj):
+    def enviar_json(sock, obj):
         line = (json.dumps(obj) + "\n").encode()
         sock.sendall(line)
 
     @staticmethod
-    def recv_json_line(sock):
+    def receber_json(sock):
         buf = b""
         while True:
             ch = sock.recv(1)
@@ -127,28 +127,28 @@ class Servidor:
         except Exception:
             return None
 
-    def register(self, name, p2p_port, pk_b64):
+    def registrar(self, name, p2p_port, pk_b64):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((SERVER_IP, SERVER_PORT))
-        self.send_json(s, {
+        self.enviar_json(s, {
             "cmd": "REGISTER",
             "name": name,
             "p2p_port": p2p_port,
             "public_key": pk_b64
         })
-        resp = self.recv_json_line(s)
+        resp = self.receber_json(s)
         if not resp or resp.get("type") != "OK":
             print("Falha ao registrar:", resp)
             sys.exit(1)
         return s
 
-    def request_match(self, sock, target=None):
+    def partida(self, sock, target=None):
         if target:
-            self.send_json(sock, {"cmd": "CHALLENGE", "target": target})
+            self.enviar_json(sock, {"cmd": "CHALLENGE", "target": target})
         else:
-            self.send_json(sock, {"cmd": "MATCH_RANDOM"})
+            self.enviar_json(sock, {"cmd": "MATCH_RANDOM"})
         while True:
-            resp = self.recv_json_line(sock)
+            resp = self.receber_json(sock)
             if not resp:
                 return None
             if resp.get("type") == "MATCH":
@@ -168,7 +168,7 @@ class Batalha:
             self.my_turn = False
             self.lock = threading.Lock()
 
-        def apply_move(self, move_name, by_me):
+        def aplicar_movimento(self, move_name, by_me):
             dmg = MOVES.get(move_name, 10)
             with self.lock:
                 if by_me:
@@ -176,10 +176,10 @@ class Batalha:
                 else:
                     self.my_hp = max(0, self.my_hp - dmg)
 
-        def is_over(self):
+        def terminado(self):
             return self.my_hp <= 0 or self.opp_hp <= 0
 
-        def winner(self):
+        def vencedor(self):
             if self.my_hp <= 0 and self.opp_hp <= 0:
                 return "draw"
             if self.my_hp <= 0:
@@ -216,6 +216,9 @@ class Batalha:
         #Debug
         print("\nSeu seguredo compartilhado:" + self.shared_key + "\n")
 
+
+
+
     def loop(self):
         print(f"\n=== BATALHA INICIADA ===\n{self.state.my_name} vs {self.state.opp_name}")
         print("Seus movimentos:", ", ".join(MOVES.keys()))
@@ -223,7 +226,7 @@ class Batalha:
 
 
         #Aqui começa o loop do jogo
-        while not self.state.is_over():
+        while not self.state.terminado():
             if self.state.my_turn:
                 move = input("Seu movimento: ").strip().capitalize()
                 if move not in MOVES:
@@ -231,7 +234,7 @@ class Batalha:
                     continue
 
                 self.rede.send_p2p({"type": "MOVE", "name": move}, self.p2p_file, self.shared_key)
-                self.state.apply_move(move, True)
+                self.state.aplicar_movimento(move, True)
                 print(f"Você usou {move}! HP do oponente: {self.state.opp_hp}")
                 self.state.my_turn = False
 
@@ -243,15 +246,15 @@ class Batalha:
                     print("Conexão P2P encerrada.")
                     break
                 opp_move = msg.get("name")
-                self.state.apply_move(opp_move, False)
+                self.state.aplicar_movimento(opp_move, False)
                 print(f"Oponente usou {opp_move}! Seu HP: {self.state.my_hp}")
                 self.state.my_turn = True
 
 
 
-        vencedor = self.state.winner()
+        vencedor = self.state.vencedor()
         print(f"\nResultado: {vencedor}")
-        Servidor.send_json(self.server_sock, {
+        Servidor.enviar_json(self.server_sock, {
             "cmd": "RESULT",
             "me": self.state.my_name,
             "opponent": self.state.opp_name,
@@ -275,13 +278,13 @@ if __name__ == "__main__":
 
     threading.Thread(target=rede.udp_listener, daemon=True).start()
 
-    server_sock = servidor.register(my_name, my_p2p_port, crypto.pk_base64())
+    server_sock = servidor.registrar(my_name, my_p2p_port, crypto.pk_base64())
 
     while True:
             cmd = input("Digite comando (list, desafiar <nome>, aleatorio, sair): ").strip()
             if cmd == "list":
-                servidor.send_json(server_sock, {"cmd": "LIST"})
-                print("Jogadores online:", servidor.recv_json_line(server_sock))
+                servidor.enviar_json(server_sock, {"cmd": "LIST"})
+                print("Jogadores online:", servidor.receber_json(server_sock))
             
           #ISSO AQUI VAI TER QUE SER ALTERADO  
             #Falta por fila de desafios e aceites, para dar para desafiar várias pessoas ao mesmo tempo e se uma aceitar, cancela os pendentes
@@ -293,12 +296,16 @@ if __name__ == "__main__":
                 if alvo == my_name:
                     print("Você não pode se desafiar.")
                     continue
-                op = servidor.request_match(server_sock, alvo)
+                op = servidor.partida(server_sock, alvo)
                 batalha = Batalha(my_name, my_p2p_port, op, dial=False, rede=rede, crypto=crypto, server_sock=server_sock)
                 batalha.preparar_conexao(dial=False)
                 batalha.loop()
+
+
+            
+            
             elif cmd == "aleatorio":
-                op = servidor.request_match(server_sock)
+                op = servidor.partida(server_sock)
                 batalha = Batalha(my_name, my_p2p_port, op, dial=False, rede=rede, crypto=crypto, server_sock=server_sock)
                 batalha.preparar_conexao(dial=False)
                 batalha.loop()
@@ -307,7 +314,7 @@ if __name__ == "__main__":
             #ISSO TA ERRADO, coloquei só para testar
             elif cmd.startswith("aceitar "):
                 alvo = cmd.split(" ", 1)[1]
-                op = servidor.request_match(server_sock, alvo)
+                op = servidor.partida(server_sock, alvo)
                 batalha = Batalha(my_name, my_p2p_port, op, dial=True, rede=rede, crypto=crypto, server_sock=server_sock)
                 batalha.preparar_conexao(dial=True)
                 batalha.loop()
@@ -336,6 +343,8 @@ if __name__ == "__main__":
     #Falta colocar um módulo de gerenciar escolha do pokemon
 
     #Falta chat
+
+    #Ranking?
 
     #Falta interface gráfica
 
