@@ -4,6 +4,9 @@ import json
 import sys
 import base64
 import os
+import queue
+import time
+import logging
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import serialization
@@ -11,6 +14,7 @@ from cryptography.hazmat.primitives import serialization
 SERVER_IP = "127.0.0.1"
 SERVER_PORT = 5000
 UDP_BROADCAST_PORT = 5001
+BUFFER_SIZE = 4096
 
 MOVES = {
     "Tackle": 15,
@@ -19,101 +23,124 @@ MOVES = {
     "Flamethrower": 25,
 }
 
-class Cryptografia:
-    def __init__(self):
-        self.sk = x25519.X25519PrivateKey.generate()
-        self.pk = self.sk.public_key()
+logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
-    def pk_base64(self):
-        pk_bytes = self.pk.public_bytes(
-            encoding=serialization.Encoding.Raw,
-            format=serialization.PublicFormat.Raw
-        )
-        return base64.b64encode(pk_bytes).decode()
+class Crypto:
+    def __init__(self):
+        self._sk = x25519.X25519PrivateKey.generate()
+        self._pk = self._sk.public_key()
+
+    def public_key_b64(self):
+        raw = self._pk.public_bytes(encoding=serialization.Encoding.Raw,
+                                     format=serialization.PublicFormat.Raw)
+        return base64.b64encode(raw).decode()
 
     def shared_key(self, opp_pk_b64):
-        opp_pk_bytes = base64.b64decode(opp_pk_b64)
-        opp_pk = x25519.X25519PublicKey.from_public_bytes(opp_pk_bytes)
-        return self.sk.exchange(opp_pk)
+        opp_raw = base64.b64decode(opp_pk_b64)
+        opp_pk = x25519.X25519PublicKey.from_public_bytes(opp_raw)
+        return self._sk.exchange(opp_pk)
 
     @staticmethod
-    def criptografar_json(shared_key, plaintext):
-        aesgcm = AESGCM(shared_key)
+    def encrypt_json(key, obj):
+        aesgcm = AESGCM(key)
         nonce = os.urandom(12)
-        ciphertext = aesgcm.encrypt(nonce, json.dumps(plaintext).encode(), None)
-        return base64.b64encode(nonce + ciphertext).decode()
+        plaintext = json.dumps(obj).encode()
+        ct = aesgcm.encrypt(nonce, plaintext, None)
+        return base64.b64encode(nonce + ct).decode()
 
     @staticmethod
-    def descriptografar_json(shared_key, ciphertext_b64):
+    def decrypt_json(key, b64):
         try:
-            ciphertext = base64.b64decode(ciphertext_b64)
-            nonce, ciphertext = ciphertext[:12], ciphertext[12:]
-            aesgcm = AESGCM(shared_key)
-            plaintext = aesgcm.decrypt(nonce, ciphertext, None)
-            return json.loads(plaintext.decode())
+            raw = base64.b64decode(b64)
+            nonce, ct = raw[:12], raw[12:]
+            aesgcm = AESGCM(key)
+            pt = aesgcm.decrypt(nonce, ct, None)
+            return json.loads(pt.decode())
         except Exception as e:
-            print(f"[ERRO] Falha ao descriptografar: {e}")
+            logging.warning(f"Falha ao descriptografar mensagem: {e}")
             return None
 
-
-class Rede:
+class Network:
     def __init__(self):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
-    def udp_listener(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+    def start_udp_listener(self, handler):
+        def _listen():
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(("", UDP_BROADCAST_PORT))
+            logging.info(f"UDP listener rodando na porta {UDP_BROADCAST_PORT}")
             while True:
-                data, _ = s.recvfrom(4096)
                 try:
-                    msg = json.loads(data.decode())
-                    print(f"[BCAST] {msg}")
-                except Exception:
-                    pass
+                    data, addr = s.recvfrom(BUFFER_SIZE)
+                    try:
+                        msg = json.loads(data.decode())
+                        
+                        #Apagar
+                        print("mensagem recebida:")
+                        print(msg)
+                        print("\n")
 
-    def udp_broadcast(self, msg: dict):
-        data = json.dumps(msg).encode()
-        self.sock.sendto(data, ("255.255.255.255", UDP_BROADCAST_PORT))
+                        handler(msg, addr)
+                    except json.JSONDecodeError:
+                        logging.debug("Recebeu UDP inválido")
+                except Exception as e:
+                    logging.exception("Erro no UDP listener: %s", e)
+                    break
+        t = threading.Thread(target=_listen, daemon=True)
+        t.start()
 
-    def p2p_listener(self, port):
+    def udp_send(self, obj, ip='255.255.255.255', port=UDP_BROADCAST_PORT):
+        data = json.dumps(obj).encode()
+        print(data)
+        print(obj)
+        self.udp_sock.sendto(data, (ip, port))
+
+    def p2p_listen(self, port, backlog=1, timeout=None):
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         listener.bind(("0.0.0.0", port))
-        listener.listen(1)
-        listener.settimeout(10)
+        listener.listen(backlog)
+        if timeout is not None:
+            listener.settimeout(timeout)
         conn, addr = listener.accept()
-        listener.close()
-        print(f"[P2P] Conectado com {addr}")
+        logging.info(f"P2P: conexão aceita {addr}")
+        try:
+            listener.close()
+        except Exception:
+            pass
         return conn
 
-    def p2p_dial(self, ip, port):
+    def p2p_connect(self, ip, port, timeout=5.0):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
         s.connect((ip, port))
-        print(f"[P2P] Conectado a {(ip, port)}")
+        logging.info(f"P2P: conectado a {(ip, port)}")
         return s
 
     @staticmethod
-    def enviar_p2p(obj, p2p_file, shared_key):
-        msg = Cryptografia.criptografar_json(shared_key, obj).encode()
-        p2p_file.write(msg + b"\n")
-        p2p_file.flush()
+    def send_line(sock, data):
+        sock.sendall(data + b"\n")
 
     @staticmethod
-    def receber_p2p(p2p_file, shared_key):
-        msg_cripto = p2p_file.readline().strip()
-        return Cryptografia.descriptografar_json(shared_key, msg_cripto.decode())
+    def recv_line(fileobj):
+        line = fileobj.readline()
+        if not line:
+            return None
+        return line.strip()
 
+class ServerClient:
+    def __init__(self):
+        pass
 
-class Servidor:
     @staticmethod
-    def enviar_json(sock, obj):
+    def send_json(sock, obj):
         line = (json.dumps(obj) + "\n").encode()
         sock.sendall(line)
 
     @staticmethod
-    def receber_json(sock):
+    def recv_json(sock):
         buf = b""
         while True:
             ch = sock.recv(1)
@@ -127,227 +154,288 @@ class Servidor:
         except Exception:
             return None
 
-    def registrar(self, name, p2p_port, pk_b64):
+    def register(self, name, p2p_port, pk_b64):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((SERVER_IP, SERVER_PORT))
-        self.enviar_json(s, {
-            "cmd": "REGISTER",
-            "name": name,
-            "p2p_port": p2p_port,
-            "public_key": pk_b64
-        })
-        resp = self.receber_json(s)
+        self.send_json(s, {"cmd": "REGISTER", "name": name, "p2p_port": p2p_port, "public_key": pk_b64})
+        resp = self.recv_json(s)
         if not resp or resp.get("type") != "OK":
-            print("Falha ao registrar:", resp)
-            sys.exit(1)
+            logging.error("Falha ao registrar no servidor: %s", resp)
+            s.close()
+            raise SystemExit(1)
+        logging.info("Registrado no servidor com sucesso")
         return s
 
-    def partida(self, sock, target=None):
+    def match(self, sock, target=None):
         if target:
-            self.enviar_json(sock, {"cmd": "CHALLENGE", "target": target})
+            self.send_json(sock, {"cmd": "CHALLENGE", "target": target})
         else:
-            self.enviar_json(sock, {"cmd": "MATCH_RANDOM"})
+            self.send_json(sock, {"cmd": "MATCH_RANDOM"})
         while True:
-            resp = self.receber_json(sock)
+            resp = self.recv_json(sock)
             if not resp:
                 return None
             if resp.get("type") == "MATCH":
                 return resp["opponent"]
-            elif resp.get("type") == "ERR":
-                print("Erro:", resp)
+            if resp.get("type") == "ERR":
+                logging.error("Erro do servidor: %s", resp)
                 return None
 
-
-class Batalha:
-    class ContextoBatalha:
-        def __init__(self, my_name, opp_name):
-            self.my_name = my_name
-            self.opp_name = opp_name
+class Battle:
+    class State:
+        def __init__(self, me, opp):
+            self.me = me
+            self.opp = opp
             self.my_hp = 100
             self.opp_hp = 100
             self.my_turn = False
             self.lock = threading.Lock()
 
-        def aplicar_movimento(self, move_name, by_me):
-            dmg = MOVES.get(move_name, 10)
+        def apply_move(self, move, by_me):
+            dmg = MOVES.get(move, 10)
             with self.lock:
                 if by_me:
                     self.opp_hp = max(0, self.opp_hp - dmg)
                 else:
                     self.my_hp = max(0, self.my_hp - dmg)
 
-        def terminado(self):
+        def finished(self):
             return self.my_hp <= 0 or self.opp_hp <= 0
 
-        def vencedor(self):
+        def winner(self):
             if self.my_hp <= 0 and self.opp_hp <= 0:
                 return "draw"
             if self.my_hp <= 0:
-                return self.opp_name
+                return self.opp
             if self.opp_hp <= 0:
-                return self.my_name
+                return self.me
             return None
 
-
-
-
-
-    def __init__(self, my_name, my_p2p_port, opp_info, dial, rede, crypto, server_sock):
-        self.state = self.ContextoBatalha(my_name, opp_info["name"])
-        self.state.my_turn = dial
-        self.rede = rede
+    def __init__(self, my_name, my_p2p_port, opp_info, dial, network, crypto, server_sock):
+        self.state = Battle.State(my_name, opp_info['name'])
+        self.my_name = my_name
+        self.my_p2p_port = my_p2p_port
+        self.opp_info = opp_info
+        self.dial = dial
+        self.network = network
         self.crypto = crypto
         self.server_sock = server_sock
-        self.opp_info = opp_info
-        self.my_p2p_port = my_p2p_port
         self.shared_key = None
-        self.p2p_socket = None
-        self.p2p_file = None
+        self.conn = None
+        self.fileobj = None
 
-    def preparar_conexao(self, dial):
-        if dial:
-            self.p2p_socket = self.rede.p2p_dial(self.opp_info["ip"], int(self.opp_info["p2p_port"]))
+    def prepare(self):
+        if self.dial:
+            self.conn = self.network.p2p_connect(self.opp_info['ip'], int(self.opp_info['p2p_port']))
         else:
-            self.p2p_socket = self.rede.p2p_listener(self.my_p2p_port)
+            self.conn = self.network.p2p_listen(self.my_p2p_port, backlog=1, timeout=None)
+        self.fileobj = self.conn.makefile("rwb")
+        self.shared_key = self.crypto.shared_key(self.opp_info['public_key'])
+        logging.debug("Shared key criada com sucesso")
 
-        self.p2p_file = self.p2p_socket.makefile("rwb")
-        self.shared_key = self.crypto.shared_key(self.opp_info["public_key"])
+    def send_encrypted(self, obj):
+        assert self.shared_key is not None
+        msg = Crypto.encrypt_json(self.shared_key, obj).encode()
+        Network.send_line(self.conn, msg)
 
-        #Debug
-        print("\nSeu seguredo compartilhado:" + self.shared_key + "\n")
-
-
-
+    def recv_encrypted(self):
+        assert self.shared_key is not None
+        line = Network.recv_line(self.fileobj)
+        if line is None:
+            return None
+        return Crypto.decrypt_json(self.shared_key, line.decode())
 
     def loop(self):
-        print(f"\n=== BATALHA INICIADA ===\n{self.state.my_name} vs {self.state.opp_name}")
-        print("Seus movimentos:", ", ".join(MOVES.keys()))
+        logging.info(f"=== BATALHA: {self.state.me} vs {self.state.opp} ===")
+        logging.info("Movimentos disponíveis: %s", ", ".join(MOVES.keys()))
 
-
-
-        #Aqui começa o loop do jogo
-        while not self.state.terminado():
+        while not self.state.finished():
             if self.state.my_turn:
-                move = input("Seu movimento: ").strip().capitalize()
+                move = input("Seu movimento: ").strip()
                 if move not in MOVES:
-                    print("Movimento inválido.")
+                    logging.info("Movimento inválido")
                     continue
-
-                self.rede.send_p2p({"type": "MOVE", "name": move}, self.p2p_file, self.shared_key)
-                self.state.aplicar_movimento(move, True)
-                print(f"Você usou {move}! HP do oponente: {self.state.opp_hp}")
+                self.send_encrypted({"type": "MOVE", "name": move})
+                self.state.apply_move(move, True)
+                logging.info(f"Você usou {move}. HP oponente: {self.state.opp_hp}")
                 self.state.my_turn = False
-
-
             else:
-                print("Aguardando movimento do oponente...")
-                msg = self.rede.receive_p2p(self.p2p_file, self.shared_key)
-                if not msg:
-                    print("Conexão P2P encerrada.")
+                logging.info("Aguardando movimento do oponente...")
+                msg = self.recv_encrypted()
+                if msg is None:
+                    logging.warning("Conexão P2P encerrada")
                     break
-                opp_move = msg.get("name")
-                self.state.aplicar_movimento(opp_move, False)
-                print(f"Oponente usou {opp_move}! Seu HP: {self.state.my_hp}")
-                self.state.my_turn = True
+                if msg.get('type') == 'MOVE':
+                    mv = msg.get('name')
+                    self.state.apply_move(mv, False)
+                    logging.info(f"Oponente usou {mv}. Seu HP: {self.state.my_hp}")
+                    self.state.my_turn = True
+
+        winner = self.state.winner()
+        logging.info(f"Resultado da batalha: {winner}")
+        ServerClient.send_json(self.server_sock, {"cmd": "RESULT", "me": self.state.me, "opponent": self.state.opp, "winner": winner})
+
+class QueueManager:
+    def __init__(self, my_name, my_p2p_port, network, crypto, server_sock):
+        self.my_name = my_name
+        self.my_p2p_port = my_p2p_port
+        self.network = network
+        self.crypto = crypto
+        self.server_sock = server_sock
+        self.enviados = {}
+        self.recebidos = {}
+        self.battle_started = threading.Event()
+
+    def add_send(self, opp):
+        desafio_id = f"{self.my_name}-{opp['name']}"
+        q = queue.Queue()
+        self.enviados[desafio_id] = q
+        t = threading.Thread(target=self._process_send, args=(opp, q), daemon=True)
+        t.start()
+
+    def _process_send(self, opp, q):
+        if self.battle_started.is_set():
+            return
+        
+        op_name = opp['name']
+
+        msg = {"type": "DES", "opponent": {"name": self.my_name, "ip": None, "porta": None, "p2p_port": self.my_p2p_port, "public_key": self.crypto.public_key_b64()}}
+        try:
+            self.network.udp_send(msg, ip=opp.get('ip', '255.255.255.255'), port=opp.get('porta', UDP_BROADCAST_PORT))
+            logging.info("Desafio enviado para %s", op_name)
+        except Exception as e:
+            logging.error("Falha ao enviar desafio: %s", e)
+            return
+        try:
+            resposta = q.get(timeout=20)
+        except queue.Empty:
+            logging.info("Timeout aguardando resposta de %s", op_name)
+            return
+        if self.battle_started.is_set():
+            return
+        if resposta and resposta.get('res') == 'ACE':
+            logging.info("%s aceitou. Iniciando batalha (sou quem liga).", op_name)
+            self.battle_started.set()
+            b = Battle(self.my_name, self.my_p2p_port, opp, dial=True, network=self.network, crypto=self.crypto, server_sock=self.server_sock)
+            b.prepare()
+            b.loop()
+        else:
+            logging.info("%s recusou o desafio.", op_name)
+
+    def receive_challenge(self, opp):
+        logging.info("Desafio recebido de %s", opp['name'])
+        opp["hora"] = time.time()
+        self.recebidos[opp['name']] = opp
+
+    def accept(self, opp_name):
+        if opp_name not in self.recebidos:
+            logging.info("Nenhum desafio de %s", opp_name)
+            return
+        opp = self.recebidos.pop(opp_name)
+        if time.time() - opp["hora"] > 20:
+            logging.info("Desafio de %s expirou", opp_name)
+            return
+        res = {"type": "RES", "opp": self.my_name, "res": "ACE"}
+        
+        self.network.udp_send(res, ip=opp['ip'], port=opp['porta'])
+        
+        print("Enviado para:")
+        print(opp['ip'])
+        print(opp['porta'])
+        print('\n')
 
 
 
-        vencedor = self.state.vencedor()
-        print(f"\nResultado: {vencedor}")
-        Servidor.enviar_json(self.server_sock, {
-            "cmd": "RESULT",
-            "me": self.state.my_name,
-            "opponent": self.state.opp_name,
-            "winner": vencedor
-        })
+        logging.info("Aceitei desafio de %s", opp_name)
+        self.battle_started.set()
+        b = Battle(self.my_name, self.my_p2p_port, opp, dial=False, network=self.network, crypto=self.crypto, server_sock=self.server_sock)
+        b.prepare()
+        b.loop()
 
+    def reject(self, opp_name):
+        if opp_name not in self.recebidos:
+            logging.info("Nenhum desafio de %s", opp_name)
+            return
+        opp = self.recebidos.pop(opp_name)
+        res = {"type": "RES", "opp": self.my_name, "res": "NEG"}
+        self.network.udp_send(res, ip=opp.get('ip', '127.0.0.1'), port=opp.get('p2p_port', UDP_BROADCAST_PORT))
+        logging.info("Recusei desafio de %s", opp_name)
 
-
-#main
-if __name__ == "__main__":
+def main():
     if len(sys.argv) < 3:
-        print("Uso: python client.py <meu_nome> <minha_porta_p2p>")
-        sys.exit(1)
+        print("Uso: python client_refactor.py <meu_nome> <minha_porta_p2p>")
+        raise SystemExit(1)
 
     my_name = sys.argv[1]
     my_p2p_port = int(sys.argv[2])
 
-    rede = Rede()
-    crypto = Cryptografia()
-    servidor = Servidor()
+    network = Network()
+    crypto = Crypto()
+    server = ServerClient()
 
-    threading.Thread(target=rede.udp_listener, daemon=True).start()
+    def udp_handler(msg, addr):
+        try:
+            t = msg.get('type')
+            if t == 'DES':
+                opp = msg.get('opponent')
+                opp['ip'] = addr[0]
+                opp['porta'] = addr[1]
+                queue_mgr.receive_challenge(opp)
+                
+                print("oponente:")
+                print(opp)
+                print("\n")
+                 #APAGAR
 
-    server_sock = servidor.registrar(my_name, my_p2p_port, crypto.pk_base64())
 
-    while True:
-            cmd = input("Digite comando (list, desafiar <nome>, aleatorio, sair): ").strip()
-            if cmd == "list":
-                servidor.enviar_json(server_sock, {"cmd": "LIST"})
-                print("Jogadores online:", servidor.receber_json(server_sock))
-            
-          #ISSO AQUI VAI TER QUE SER ALTERADO  
-            #Falta por fila de desafios e aceites, para dar para desafiar várias pessoas ao mesmo tempo e se uma aceitar, cancela os pendentes
-            #E fila de aceite para quem recebeu o desafio escolher quem ele quer desafiar
+            elif t == 'RES':
+                opp_name = msg.get('opp')
+                desafio_id = f"{my_name}-{opp_name}"
+                q = queue_mgr.enviados.get(desafio_id)
+                if q:
+                    q.put(msg)
+        except Exception:
+            logging.exception("Erro tratando mensagem UDP")
 
-            
-            elif cmd.startswith("desafiar "):
-                alvo = cmd.split(" ", 1)[1]
+    network.start_udp_listener(udp_handler)
+    server_sock = server.register(my_name, my_p2p_port, crypto.public_key_b64())
+    queue_mgr = QueueManager(my_name, my_p2p_port, network, crypto, server_sock)
+
+    try:
+        while True:
+            cmd = input("Digite comando (list, desafiar <nome>, aleatorio, aceitar <nome>, negar <nome>, sair): ").strip()
+            if cmd == 'list':
+                ServerClient.send_json(server_sock, {"cmd": "LIST"})
+                resp = ServerClient.recv_json(server_sock)
+                print(resp)
+            elif cmd.startswith('desafiar '):
+                alvo = cmd.split(' ', 1)[1]
                 if alvo == my_name:
-                    print("Você não pode se desafiar.")
+                    logging.info("Você não pode se desafiar")
                     continue
-                op = servidor.partida(server_sock, alvo)
-                batalha = Batalha(my_name, my_p2p_port, op, dial=False, rede=rede, crypto=crypto, server_sock=server_sock)
-                batalha.preparar_conexao(dial=False)
-                batalha.loop()
-
-
-            
-            
-            elif cmd == "aleatorio":
-                op = servidor.partida(server_sock)
-                batalha = Batalha(my_name, my_p2p_port, op, dial=False, rede=rede, crypto=crypto, server_sock=server_sock)
-                batalha.preparar_conexao(dial=False)
-                batalha.loop()
-          
-          
-            #ISSO TA ERRADO, coloquei só para testar
-            elif cmd.startswith("aceitar "):
-                alvo = cmd.split(" ", 1)[1]
-                op = servidor.partida(server_sock, alvo)
-                batalha = Batalha(my_name, my_p2p_port, op, dial=True, rede=rede, crypto=crypto, server_sock=server_sock)
-                batalha.preparar_conexao(dial=True)
-                batalha.loop()
-            
-            
-            
-            elif cmd == "sair":
-                print("Saindo...")
+                opp = server.match(server_sock, target=alvo)
+                if opp:
+                    queue_mgr.add_send(opp)
+            elif cmd == 'aleatorio':
+                opp = server.match(server_sock)
+                if opp:
+                    queue_mgr.add_send(opp)
+            elif cmd.startswith('aceitar '):
+                nome = cmd.split(' ', 1)[1]
+                queue_mgr.accept(nome)
+            elif cmd.startswith('negar '):
+                nome = cmd.split(' ', 1)[1]
+                queue_mgr.reject(nome)
+            elif cmd == 'sair':
+                logging.info("Saindo...")
                 break
             else:
-                print("Comando inválido.")
+                logging.info("Comando inválido")
+    finally:
+        try:
+            server_sock.close()
+        except Exception:
+            pass
 
-    server_sock.close()
-    print("Conexão encerrada.")
-
-
-
-
-
-    #Falta implementar sistema de matchmaking automático no server (No aleatorio)
-
-    #Falta implesmentar sistema de fila de acietar ou recusar desafios
-
-    #Falta por módulo de "Contatos", ou seja, lista pessoas que você salvou a chave pública para que não precise do servidor para iniciar batalha
-
-    #Falta colocar um módulo de gerenciar escolha do pokemon
-
-    #Falta chat
-
-    #Ranking?
-
-    #Falta interface gráfica
-
-    #Falta colocar mais pokemon na base de dados
-
-    #Falta colocar um hash cumulativo para o servidor validar se é uma vitória válida ou não. Ou mandar cada cliente assinar o movimento que fez com a chave privada e o servidor validar com a pública quando receber os logs
+if __name__ == '__main__':
+    main()
