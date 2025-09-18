@@ -36,6 +36,7 @@ MOVES = {
     "Thunderbolt": 25,
     "QuickAttack": 12,
     "Flamethrower": 25,
+    "HK": 100
 }
 
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
@@ -127,6 +128,7 @@ class Network:
         s.settimeout(timeout)
         s.connect((ip, port))
         logging.info(f"P2P: conectado a {(ip, port)}")
+        s.settimeout(None)
         return s
 
     @staticmethod
@@ -195,12 +197,12 @@ class ServerClient:
 
 class Battle:
     class State:
-        def __init__(self, me, opp):
+        def __init__(self, me, opp, turn):
             self.me = me
             self.opp = opp
             self.my_hp = 100
             self.opp_hp = 100
-            self.my_turn = False
+            self.my_turn = turn
             self.lock = threading.Lock()
 
         def apply_move(self, move, by_me):
@@ -224,7 +226,7 @@ class Battle:
             return None
 
     def __init__(self, my_name, p2p_port, opp_info, dial, network, crypto, server_sock):
-        self.state = Battle.State(my_name, opp_info['name'])
+        self.state = Battle.State(my_name, opp_info['name'], dial)
         self.my_name = my_name
         self.p2p_port = p2p_port
         self.opp_info = opp_info
@@ -239,6 +241,8 @@ class Battle:
     def prepare(self):
         if self.dial:
             self.conn = self.network.p2p_connect(self.opp_info['ip'], int(self.opp_info['p2p_port']))
+
+
         else:
             self.conn = self.network.p2p_listen(self.p2p_port, backlog=1, timeout=None)
         self.fileobj = self.conn.makefile("rwb")
@@ -262,30 +266,42 @@ class Battle:
         logging.info("Movimentos disponíveis: %s", ", ".join(MOVES.keys()))
 
         while not self.state.finished():
-            if self.state.my_turn:
-                move = input("Seu movimento: ").strip()
-                if move not in MOVES:
-                    logging.info("Movimento inválido")
-                    continue
-                self.send_encrypted({"type": "MOVE", "name": move})
-                self.state.apply_move(move, True)
-                logging.info(f"Você usou {move}. HP oponente: {self.state.opp_hp}")
-                self.state.my_turn = False
-            else:
-                logging.info("Aguardando movimento do oponente...")
-                msg = self.recv_encrypted()
-                if msg is None:
-                    logging.warning("Conexão P2P encerrada")
-                    break
-                if msg.get('type') == 'MOVE':
-                    mv = msg.get('name')
-                    self.state.apply_move(mv, False)
-                    logging.info(f"Oponente usou {mv}. Seu HP: {self.state.my_hp}")
-                    self.state.my_turn = True
+            try:                
+                if self.state.my_turn:
+                    move = input("Seu movimento: ").strip()
+                    if move not in MOVES:
+                        logging.info("Movimento inválido")
+                        continue
+                    self.send_encrypted({"type": "MOVE", "name": move})
+                    self.state.apply_move(move, True)
+                    logging.info(f"Você usou {move}. HP oponente: {self.state.opp_hp}")
+
+                    self.state.my_turn = False
+                else:
+                    self.conn.settimeout(60.0)
+                    logging.info("Aguardando movimento do oponente...")
+                    msg = self.recv_encrypted()
+                    if msg is None:
+                        logging.warning("Conexão P2P encerrada")
+                        break
+                    if msg.get('type') == 'MOVE':
+                        mv = msg.get('name')
+                        self.state.apply_move(mv, False)
+                        logging.info(f"Oponente usou {mv}. Seu HP: {self.state.my_hp}")
+                        self.state.my_turn = True
+            except:
+                print("Timeout, saindo da batalha...")
+                break
+            finally:
+                try:
+                    self.conn.close()
+                except Exception:
+                    pass
 
         winner = self.state.winner()
         logging.info(f"Resultado da batalha: {winner}")
         ServerClient.send_json(self.server_sock, {"cmd": "RESULT", "me": self.state.me, "opponent": self.state.opp, "winner": winner})
+
 
 class QueueManager:
     def __init__(self, my_name, p2p_port, network, crypto, server_sock, udp_port):
@@ -332,6 +348,7 @@ class QueueManager:
             b = Battle(self.my_name, self.p2p_port, opp, dial=True, network=self.network, crypto=self.crypto, server_sock=self.server_sock)
             b.prepare()
             b.loop()
+            self.battle_started.clear()
         else:
             logging.info("%s recusou o desafio.", op_name)
 
@@ -350,12 +367,16 @@ class QueueManager:
             return
         res = {"type": "RES", "opp": self.my_name, "res": "ACE"}
         
-        #self.network.udp_send(res, ip=opp['ip'], port=opp['porta'])
-        self.network.udp_send(res, ip=opp.get('ip', '255.255.255.255'), port=opp.get('porta', self.udp_port))
-            
+        
+        #self.network.udp_send(res, ip=opp.get('ip', '255.255.255.255'), port=self.udp_port)
+        self.network.udp_send(res, ip='255.255.255.255', port=self.udp_port)
+
+
         print("Enviado para:")
         print(opp['ip'])
-        print(opp['porta'])
+        print(opp.get('ip', '255.255.255.255'))
+
+        print(self.udp_port)
         print('\n')
 
 
@@ -363,8 +384,12 @@ class QueueManager:
         logging.info("Aceitei desafio de %s", opp_name)
         self.battle_started.set()
         b = Battle(self.my_name, self.p2p_port, opp, dial=False, network=self.network, crypto=self.crypto, server_sock=self.server_sock)
-        b.prepare()
+        try:
+            b.prepare()
+        except:
+            return
         b.loop()
+        self.battle_started.clear()
 
     def reject(self, opp_name):
         if opp_name not in self.recebidos:
@@ -384,7 +409,7 @@ def main():
     server_ip = sys.argv[2] if len(sys.argv) > 2 else input_default("IP do servidor (Vazio para 127.0.0.1)", "127.0.0.1")
     server_port = int(sys.argv[3]) if len(sys.argv) > 3 else int(input_default("Porta do servidor (Vazio para 5000)", "5000"))
     #udp_port = int(sys.argv[4]) if len(sys.argv) > 4 else int(input_default("Porta UDP broadcast (Vazio para 5001)", "5001"))
-    p2p_port = int(sys.argv[5]) if len(sys.argv) > 5 else int(input_default("Porta P2P (Vazio para 7000)", "7000"))
+    p2p_port = int(sys.argv[4]) if len(sys.argv) > 4 else int(input_default("Porta P2P (Vazio para 7000)", "7000"))
 
     udp_port = 5000
 
