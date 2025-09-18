@@ -11,10 +11,25 @@ from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import serialization
 
-SERVER_IP = "127.0.0.1"
-SERVER_PORT = 5000
-UDP_BROADCAST_PORT = 5001
 BUFFER_SIZE = 4096
+
+
+def input_default(prompt, default):
+    s = input(f"{prompt}").strip()
+    return s if s else default
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 MOVES = {
     "Tackle": 15,
@@ -61,27 +76,22 @@ class Crypto:
             return None
 
 class Network:
-    def __init__(self):
+    def __init__(self, udp_broadcast_port):
         self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        self.udp_broadcast_port = udp_broadcast_port
 
     def start_udp_listener(self, handler):
         def _listen():
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind(("", UDP_BROADCAST_PORT))
-            logging.info(f"UDP listener rodando na porta {UDP_BROADCAST_PORT}")
+            s.bind(("", self.udp_broadcast_port))
+            logging.info(f"UDP listener rodando na porta {self.udp_broadcast_port}")
             while True:
                 try:
                     data, addr = s.recvfrom(BUFFER_SIZE)
                     try:
                         msg = json.loads(data.decode())
-                        
-                        #Apagar
-                        print("mensagem recebida:")
-                        print(msg)
-                        print("\n")
-
                         handler(msg, addr)
                     except json.JSONDecodeError:
                         logging.debug("Recebeu UDP inválido")
@@ -91,10 +101,10 @@ class Network:
         t = threading.Thread(target=_listen, daemon=True)
         t.start()
 
-    def udp_send(self, obj, ip='255.255.255.255', port=UDP_BROADCAST_PORT):
+    def udp_send(self, obj, ip='255.255.255.255', port=None):
+        if port is None:
+            port = self.udp_broadcast_port
         data = json.dumps(obj).encode()
-        print(data)
-        print(obj)
         self.udp_sock.sendto(data, (ip, port))
 
     def p2p_listen(self, port, backlog=1, timeout=None):
@@ -130,9 +140,11 @@ class Network:
             return None
         return line.strip()
 
+
 class ServerClient:
-    def __init__(self):
-        pass
+    def __init__(self, server_ip, server_port):
+        self.server_ip = server_ip 
+        self.server_port = server_port
 
     @staticmethod
     def send_json(sock, obj):
@@ -156,7 +168,7 @@ class ServerClient:
 
     def register(self, name, p2p_port, pk_b64):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((SERVER_IP, SERVER_PORT))
+        s.connect((self.server_ip, self.server_port))
         self.send_json(s, {"cmd": "REGISTER", "name": name, "p2p_port": p2p_port, "public_key": pk_b64})
         resp = self.recv_json(s)
         if not resp or resp.get("type") != "OK":
@@ -211,10 +223,10 @@ class Battle:
                 return self.me
             return None
 
-    def __init__(self, my_name, my_p2p_port, opp_info, dial, network, crypto, server_sock):
+    def __init__(self, my_name, p2p_port, opp_info, dial, network, crypto, server_sock):
         self.state = Battle.State(my_name, opp_info['name'])
         self.my_name = my_name
-        self.my_p2p_port = my_p2p_port
+        self.p2p_port = p2p_port
         self.opp_info = opp_info
         self.dial = dial
         self.network = network
@@ -228,7 +240,7 @@ class Battle:
         if self.dial:
             self.conn = self.network.p2p_connect(self.opp_info['ip'], int(self.opp_info['p2p_port']))
         else:
-            self.conn = self.network.p2p_listen(self.my_p2p_port, backlog=1, timeout=None)
+            self.conn = self.network.p2p_listen(self.p2p_port, backlog=1, timeout=None)
         self.fileobj = self.conn.makefile("rwb")
         self.shared_key = self.crypto.shared_key(self.opp_info['public_key'])
         logging.debug("Shared key criada com sucesso")
@@ -276,12 +288,13 @@ class Battle:
         ServerClient.send_json(self.server_sock, {"cmd": "RESULT", "me": self.state.me, "opponent": self.state.opp, "winner": winner})
 
 class QueueManager:
-    def __init__(self, my_name, my_p2p_port, network, crypto, server_sock):
+    def __init__(self, my_name, p2p_port, network, crypto, server_sock, udp_port):
         self.my_name = my_name
-        self.my_p2p_port = my_p2p_port
+        self.p2p_port = p2p_port
         self.network = network
         self.crypto = crypto
         self.server_sock = server_sock
+        self.udp_port = udp_port  # usado como fallback no envio UDP
         self.enviados = {}
         self.recebidos = {}
         self.battle_started = threading.Event()
@@ -299,9 +312,9 @@ class QueueManager:
         
         op_name = opp['name']
 
-        msg = {"type": "DES", "opponent": {"name": self.my_name, "ip": None, "porta": None, "p2p_port": self.my_p2p_port, "public_key": self.crypto.public_key_b64()}}
+        msg = {"type": "DES", "opponent": {"name": self.my_name, "ip": None, "porta": None, "p2p_port": self.p2p_port, "public_key": self.crypto.public_key_b64()}}
         try:
-            self.network.udp_send(msg, ip=opp.get('ip', '255.255.255.255'), port=opp.get('porta', UDP_BROADCAST_PORT))
+            self.network.udp_send(msg, ip=opp.get('ip', '255.255.255.255'), port=opp.get('porta', self.udp_port))
             logging.info("Desafio enviado para %s", op_name)
         except Exception as e:
             logging.error("Falha ao enviar desafio: %s", e)
@@ -316,7 +329,7 @@ class QueueManager:
         if resposta and resposta.get('res') == 'ACE':
             logging.info("%s aceitou. Iniciando batalha (sou quem liga).", op_name)
             self.battle_started.set()
-            b = Battle(self.my_name, self.my_p2p_port, opp, dial=True, network=self.network, crypto=self.crypto, server_sock=self.server_sock)
+            b = Battle(self.my_name, self.p2p_port, opp, dial=True, network=self.network, crypto=self.crypto, server_sock=self.server_sock)
             b.prepare()
             b.loop()
         else:
@@ -337,8 +350,9 @@ class QueueManager:
             return
         res = {"type": "RES", "opp": self.my_name, "res": "ACE"}
         
-        self.network.udp_send(res, ip=opp['ip'], port=opp['porta'])
-        
+        #self.network.udp_send(res, ip=opp['ip'], port=opp['porta'])
+        self.network.udp_send(res, ip=opp.get('ip', '255.255.255.255'), port=opp.get('porta', self.udp_port))
+            
         print("Enviado para:")
         print(opp['ip'])
         print(opp['porta'])
@@ -348,7 +362,7 @@ class QueueManager:
 
         logging.info("Aceitei desafio de %s", opp_name)
         self.battle_started.set()
-        b = Battle(self.my_name, self.my_p2p_port, opp, dial=False, network=self.network, crypto=self.crypto, server_sock=self.server_sock)
+        b = Battle(self.my_name, self.p2p_port, opp, dial=False, network=self.network, crypto=self.crypto, server_sock=self.server_sock)
         b.prepare()
         b.loop()
 
@@ -358,20 +372,26 @@ class QueueManager:
             return
         opp = self.recebidos.pop(opp_name)
         res = {"type": "RES", "opp": self.my_name, "res": "NEG"}
-        self.network.udp_send(res, ip=opp.get('ip', '127.0.0.1'), port=opp.get('p2p_port', UDP_BROADCAST_PORT))
+        self.network.udp_send(res, ip=opp['ip'], port=self.udp_port)
         logging.info("Recusei desafio de %s", opp_name)
 
 def main():
-    if len(sys.argv) < 3:
-        print("Uso: python client_refactor.py <meu_nome> <minha_porta_p2p>")
-        raise SystemExit(1)
 
-    my_name = sys.argv[1]
-    my_p2p_port = int(sys.argv[2])
+    # Nome do usuário
+    print("Uso fácil: python client_refactor.py <meu_nome> <ip_server> <porta_server> <minha_porta_udp> <minha_porta_p2p>")
 
-    network = Network()
+    my_name = sys.argv[1] if len(sys.argv) > 1 else input("Seu nome: ").strip()
+    server_ip = sys.argv[2] if len(sys.argv) > 2 else input_default("IP do servidor (Vazio para 127.0.0.1)", "127.0.0.1")
+    server_port = int(sys.argv[3]) if len(sys.argv) > 3 else int(input_default("Porta do servidor (Vazio para 5000)", "5000"))
+    #udp_port = int(sys.argv[4]) if len(sys.argv) > 4 else int(input_default("Porta UDP broadcast (Vazio para 5001)", "5001"))
+    p2p_port = int(sys.argv[5]) if len(sys.argv) > 5 else int(input_default("Porta P2P (Vazio para 7000)", "7000"))
+
+    udp_port = 5000
+
+    network = Network(udp_broadcast_port=udp_port)
     crypto = Crypto()
-    server = ServerClient()
+    server = ServerClient(server_ip,server_port)
+
 
     def udp_handler(msg, addr):
         try:
@@ -391,15 +411,21 @@ def main():
             elif t == 'RES':
                 opp_name = msg.get('opp')
                 desafio_id = f"{my_name}-{opp_name}"
+                
+                #APAGAR
+                print("RECEBIDO")
+                print(msg)
+
+
                 q = queue_mgr.enviados.get(desafio_id)
                 if q:
                     q.put(msg)
         except Exception:
             logging.exception("Erro tratando mensagem UDP")
 
+    server_sock = server.register(my_name, p2p_port, crypto.public_key_b64())
+    queue_mgr = QueueManager(my_name, p2p_port, network, crypto, server_sock, udp_port)
     network.start_udp_listener(udp_handler)
-    server_sock = server.register(my_name, my_p2p_port, crypto.public_key_b64())
-    queue_mgr = QueueManager(my_name, my_p2p_port, network, crypto, server_sock)
 
     try:
         while True:
