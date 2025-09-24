@@ -59,6 +59,7 @@ def handle_client(conn: socket.socket, addr):
             if cmd == "REGISTER":
                 name = msg.get("name")
                 p2p_port = int(msg.get("p2p_port", 0))
+                udp_port = int(msg.get("udp_port", 0))
 
                 pk = msg.get("public_key") #<-Pego a chave pública que o cliente me enviou
                 if not name or not p2p_port:
@@ -69,7 +70,7 @@ def handle_client(conn: socket.socket, addr):
                         send({"type":"ERR","msg":"name_in_use"})
                         continue
 
-                    players[name] = {"addr": addr, "public_key": pk, "p2p_port": p2p_port} #<- Salvo as informações
+                    players[name] = {"addr": addr, "public_key": pk, "p2p_port": p2p_port, "udp_port": udp_port} #<- Salvo as informações
 
 
                 send({"type":"OK","msg":"registered"})
@@ -102,9 +103,10 @@ def handle_client(conn: socket.socket, addr):
                     op_ip = players[target]["addr"][0]
                     op_p2p = players[target]["p2p_port"]
                     op_public_key = players[target]["public_key"] # <- Pego a chave pública do desafiado e envio para o cliente que fez o desafio
+                    op_udp_port = players[target]["udp_port"]
 
                 # Notifica ambos com as infos do outro
-                send({"type":"MATCH","opponent": {"name": target, "ip": op_ip, "p2p_port": op_p2p, "public_key": op_public_key}})
+                send({"type":"MATCH","opponent": {"name": target, "ip": op_ip, "p2p_port": op_p2p, "public_key": op_public_key, "udp_port": op_udp_port}})
                 #Tenta notificar o desafiado se ele ainda estiver conectado (melhorias: push async)
                 
                 
@@ -126,7 +128,10 @@ def handle_client(conn: socket.socket, addr):
                     with lock:
                         op_ip = players[target]["addr"][0]
                         op_p2p = players[target]["p2p_port"]
-                    send({"type":"MATCH","opponent": {"name": target, "ip": op_ip, "p2p_port": op_p2p, "public_key": op_public_key}})
+                        op_public_key = players[target]["public_key"]
+                        op_udp_port = players[target]["udp_port"]
+
+                        send({"type":"MATCH","opponent": {"name": target, "ip": op_ip, "p2p_port": op_p2p, "public_key": op_public_key, "udp_port": op_udp_port}})
 
 
                     

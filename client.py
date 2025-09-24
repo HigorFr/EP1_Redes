@@ -26,11 +26,6 @@ def input_default(prompt, default):
 
 
 
-
-
-
-
-
 MOVES = {
     "Tackle": 15,
     "Thunderbolt": 25,
@@ -83,10 +78,14 @@ class Network:
         self.udp_broadcast_port = udp_broadcast_port
 
     def start_udp_listener(self, handler):
+
         def _listen():
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind(("", self.udp_broadcast_port))
+
+            s.bind(("0.0.0.0", self.udp_broadcast_port))
+            logging.info(f"UDP listener rodando na porta {self.udp_broadcast_port}")
+
             logging.info(f"UDP listener rodando na porta {self.udp_broadcast_port}")
             while True:
                 try:
@@ -101,6 +100,8 @@ class Network:
                     break
         t = threading.Thread(target=_listen, daemon=True)
         t.start()
+
+
 
     def udp_send(self, obj, ip='255.255.255.255', port=None):
         if port is None:
@@ -168,10 +169,17 @@ class ServerClient:
         except Exception:
             return None
 
-    def register(self, name, p2p_port, pk_b64):
+    def register(self, name, p2p_port, pk_b64, udp_port):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((self.server_ip, self.server_port))
-        self.send_json(s, {"cmd": "REGISTER", "name": name, "p2p_port": p2p_port, "public_key": pk_b64})
+        # adiciona udp_port no registro
+        self.send_json(s, {
+            "cmd": "REGISTER",
+            "name": name,
+            "p2p_port": p2p_port,
+            "udp_port": udp_port,
+            "public_key": pk_b64
+        })
         resp = self.recv_json(s)
         if not resp or resp.get("type") != "OK":
             logging.error("Falha ao registrar no servidor: %s", resp)
@@ -179,6 +187,9 @@ class ServerClient:
             raise SystemExit(1)
         logging.info("Registrado no servidor com sucesso")
         return s
+    
+
+
 
     def match(self, sock, target=None):
         if target:
@@ -190,7 +201,7 @@ class ServerClient:
             if not resp:
                 return None
             if resp.get("type") == "MATCH":
-                return resp["opponent"]
+                return resp["opponent"]  # deve conter ip, p2p_port e udp_port
             if resp.get("type") == "ERR":
                 logging.error("Erro do servidor: %s", resp)
                 return None
@@ -244,7 +255,7 @@ class Battle:
 
 
         else:
-            self.conn = self.network.p2p_listen(self.p2p_port, backlog=1, timeout=None)
+            self.conn = self.network.p2p_listen(self.p2p_port, backlog=1, timeout=10)
         self.fileobj = self.conn.makefile("rwb")
         self.shared_key = self.crypto.shared_key(self.opp_info['public_key'])
         logging.debug("Shared key criada com sucesso")
@@ -325,13 +336,30 @@ class QueueManager:
     def _process_send(self, opp, q):
         if self.battle_started.is_set():
             return
-        
-        op_name = opp['name']
 
-        msg = {"type": "DES", "opponent": {"name": self.my_name, "ip": None, "porta": None, "p2p_port": self.p2p_port, "public_key": self.crypto.public_key_b64()}}
+        op_name = opp['name']
+        #usa a udp_port do oponente, se vier do servidor, ou tenta usar o proprio como padrão caso não venha
+        dest_udp_port = opp.get('udp_port', self.udp_port)
+
+        msg = {
+            "type": "DES",
+            "opponent": {
+                "name": self.my_name,
+                "ip": None,
+                "udp_port": self.udp_port,
+                "p2p_port": self.p2p_port,
+                "public_key": self.crypto.public_key_b64()
+            }
+        }
+
+
         try:
-            self.network.udp_send(msg, ip=opp.get('ip', '255.255.255.255'), port=opp.get('porta', self.udp_port))
+            self.network.udp_send(msg, ip=opp.get('ip', '255.255.255.255'), port=dest_udp_port)
+            
             logging.info("Desafio enviado para %s", op_name)
+            print(opp.get('ip', '255.255.255.255'))
+            print(dest_udp_port)
+
         except Exception as e:
             logging.error("Falha ao enviar desafio: %s", e)
             return
@@ -340,6 +368,8 @@ class QueueManager:
         except queue.Empty:
             logging.info("Timeout aguardando resposta de %s", op_name)
             return
+        
+
         if self.battle_started.is_set():
             return
         if resposta and resposta.get('res') == 'ACE':
@@ -352,31 +382,37 @@ class QueueManager:
         else:
             logging.info("%s recusou o desafio.", op_name)
 
+
+
     def receive_challenge(self, opp):
         logging.info("Desafio recebido de %s", opp['name'])
         opp["hora"] = time.time()
         self.recebidos[opp['name']] = opp
 
+
+
+
     def accept(self, opp_name):
         if opp_name not in self.recebidos:
             logging.info("Nenhum desafio de %s", opp_name)
             return
+        
+        #mudar, tem que apagar todo mundo
         opp = self.recebidos.pop(opp_name)
+
+
         if time.time() - opp["hora"] > 20:
             logging.info("Desafio de %s expirou", opp_name)
             return
         res = {"type": "RES", "opp": self.my_name, "res": "ACE"}
         
         
-        #self.network.udp_send(res, ip=opp.get('ip', '255.255.255.255'), port=self.udp_port)
-        self.network.udp_send(res, ip='255.255.255.255', port=self.udp_port)
+        self.network.udp_send(res, ip=opp.get('ip', '255.255.255.255'), port=opp.get('udp_port', self.udp_port))
 
 
         print("Enviado para:")
-        print(opp['ip'])
-        print(opp.get('ip', '255.255.255.255'))
+        print(opp.get('udp_port', '255.255.255.255'))
 
-        print(self.udp_port)
         print('\n')
 
 
@@ -397,7 +433,7 @@ class QueueManager:
             return
         opp = self.recebidos.pop(opp_name)
         res = {"type": "RES", "opp": self.my_name, "res": "NEG"}
-        self.network.udp_send(res, ip=opp['ip'], port=self.udp_port)
+        self.network.udp_send(res, ip=opp.get('ip', '255.255.255.255'), port=opp.get('udp_port', '255.255.255.255'))
         logging.info("Recusei desafio de %s", opp_name)
 
 def main():
@@ -408,15 +444,12 @@ def main():
     my_name = sys.argv[1] if len(sys.argv) > 1 else input("Seu nome: ").strip()
     server_ip = sys.argv[2] if len(sys.argv) > 2 else input_default("IP do servidor (Vazio para 127.0.0.1)", "127.0.0.1")
     server_port = int(sys.argv[3]) if len(sys.argv) > 3 else int(input_default("Porta do servidor (Vazio para 5000)", "5000"))
-    #udp_port = int(sys.argv[4]) if len(sys.argv) > 4 else int(input_default("Porta UDP broadcast (Vazio para 5001)", "5001"))
-    p2p_port = int(sys.argv[4]) if len(sys.argv) > 4 else int(input_default("Porta P2P (Vazio para 7000)", "7000"))
-
-    udp_port = 5000
+    udp_port = int(sys.argv[4]) if len(sys.argv) > 4 else int(input_default("Porta UDP broadcast (Vazio para 5001)", "5001"))
+    p2p_port = int(sys.argv[5]) if len(sys.argv) > 5 else int(input_default("Porta P2P (Vazio para 7000)", "7000"))
 
     network = Network(udp_broadcast_port=udp_port)
     crypto = Crypto()
-    server = ServerClient(server_ip,server_port)
-
+    server = ServerClient(server_ip, server_port)
 
     def udp_handler(msg, addr):
         try:
@@ -426,29 +459,18 @@ def main():
                 opp['ip'] = addr[0]
                 opp['porta'] = addr[1]
                 queue_mgr.receive_challenge(opp)
-                
-                print("oponente:")
-                print(opp)
-                print("\n")
-                 #APAGAR
-
 
             elif t == 'RES':
                 opp_name = msg.get('opp')
                 desafio_id = f"{my_name}-{opp_name}"
-                
-                #APAGAR
-                print("RECEBIDO")
-                print(msg)
-
-
                 q = queue_mgr.enviados.get(desafio_id)
                 if q:
                     q.put(msg)
+
         except Exception:
             logging.exception("Erro tratando mensagem UDP")
 
-    server_sock = server.register(my_name, p2p_port, crypto.public_key_b64())
+    server_sock = server.register(my_name, p2p_port, crypto.public_key_b64(), udp_port)
     queue_mgr = QueueManager(my_name, p2p_port, network, crypto, server_sock, udp_port)
     network.start_udp_listener(udp_handler)
 
