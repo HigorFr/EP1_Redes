@@ -326,6 +326,10 @@ class QueueManager:
         self.recebidos = {}
         self.battle_started = threading.Event()
 
+
+    def get_battle_started(self):
+        return self.battle_started.is_set()
+
     def add_send(self, opp):
         desafio_id = f"{self.my_name}-{opp['name']}"
         q = queue.Queue()
@@ -476,34 +480,36 @@ def main():
 
     try:
         while True:
-            cmd = input("Digite comando (list, desafiar <nome>, aleatorio, aceitar <nome>, negar <nome>, sair): ").strip()
-            if cmd == 'list':
-                ServerClient.send_json(server_sock, {"cmd": "LIST"})
-                resp = ServerClient.recv_json(server_sock)
-                print(resp)
-            elif cmd.startswith('desafiar '):
-                alvo = cmd.split(' ', 1)[1]
-                if alvo == my_name:
-                    logging.info("Você não pode se desafiar")
-                    continue
-                opp = server.match(server_sock, target=alvo)
-                if opp:
-                    queue_mgr.add_send(opp)
-            elif cmd == 'aleatorio':
-                opp = server.match(server_sock)
-                if opp:
-                    queue_mgr.add_send(opp)
-            elif cmd.startswith('aceitar '):
-                nome = cmd.split(' ', 1)[1]
-                queue_mgr.accept(nome)
-            elif cmd.startswith('negar '):
-                nome = cmd.split(' ', 1)[1]
-                queue_mgr.reject(nome)
-            elif cmd == 'sair':
-                logging.info("Saindo...")
-                break
-            else:
-                logging.info("Comando inválido")
+            if not queue_mgr.get_battle_started():
+                cmd = input("Digite comando (list, desafiar <nome>, aleatorio, aceitar <nome>, negar <nome>, sair): ").strip()
+                if cmd == 'list':
+                    ServerClient.send_json(server_sock, {"cmd": "LIST"})
+                    resp = ServerClient.recv_json(server_sock)
+                    print(resp)
+                elif cmd.startswith('desafiar '):
+                    alvo = cmd.split(' ', 1)[1]
+                    if alvo == my_name:
+                        logging.info("Você não pode se desafiar")
+                        continue
+                    opp = server.match(server_sock, target=alvo)
+                    if opp:
+                        queue_mgr.add_send(opp)
+                elif cmd == 'aleatorio':
+                    opp = server.match(server_sock)
+                    if opp:
+                        queue_mgr.add_send(opp)
+                elif cmd.startswith('aceitar '):
+                    nome = cmd.split(' ', 1)[1]
+                    queue_mgr.accept(nome)
+                elif cmd.startswith('negar '):
+                    nome = cmd.split(' ', 1)[1]
+                    queue_mgr.reject(nome)
+                elif cmd == 'sair':
+                    logging.info("Saindo...")
+                    break
+                else:
+                    logging.info("Comando inválido")
+                
     finally:
         try:
             server_sock.close()
