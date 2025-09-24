@@ -146,6 +146,7 @@ def handle_client(conn: socket.socket, addr):
                 op = msg.get("opponent")
                 winner = msg.get("winner")
                 udp_broadcast({"type":"EVENT","sub":"RESULT","p1":me,"p2":op,"winner":winner})
+                
                 send({"type":"OK","msg":"result_recorded"})
 
 

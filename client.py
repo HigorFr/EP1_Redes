@@ -312,6 +312,8 @@ class Battle:
         winner = self.state.winner()
         logging.info(f"Resultado da batalha: {winner}")
         ServerClient.send_json(self.server_sock, {"cmd": "RESULT", "me": self.state.me, "opponent": self.state.opp, "winner": winner})
+        resp = ServerClient.recv_json(self.server_sock,)
+        print(resp)
 
 
 class QueueManager:
@@ -383,6 +385,8 @@ class QueueManager:
             b.prepare()
             b.loop()
             self.battle_started.clear()
+
+
         else:
             logging.info("%s recusou o desafio.", op_name)
 
@@ -471,6 +475,7 @@ def main():
                 if q:
                     q.put(msg)
 
+
         except Exception:
             logging.exception("Erro tratando mensagem UDP")
 
@@ -478,14 +483,16 @@ def main():
     queue_mgr = QueueManager(my_name, p2p_port, network, crypto, server_sock, udp_port)
     network.start_udp_listener(udp_handler)
 
+
     try:
         while True:
-            if not queue_mgr.get_battle_started():
+            if not queue_mgr.get_battle_started(): #Tem que arrumar isso aqui, esse input já está aguardando enviar mesmo antes de inciar a batalha, então o primeiro movimento de ataque sempre vem para cá e dá erro.
                 cmd = input("Digite comando (list, desafiar <nome>, aleatorio, aceitar <nome>, negar <nome>, sair): ").strip()
                 if cmd == 'list':
                     ServerClient.send_json(server_sock, {"cmd": "LIST"})
                     resp = ServerClient.recv_json(server_sock)
                     print(resp)
+
                 elif cmd.startswith('desafiar '):
                     alvo = cmd.split(' ', 1)[1]
                     if alvo == my_name:
@@ -493,17 +500,22 @@ def main():
                         continue
                     opp = server.match(server_sock, target=alvo)
                     if opp:
+
                         queue_mgr.add_send(opp)
+                
                 elif cmd == 'aleatorio':
                     opp = server.match(server_sock)
                     if opp:
                         queue_mgr.add_send(opp)
+                
                 elif cmd.startswith('aceitar '):
                     nome = cmd.split(' ', 1)[1]
                     queue_mgr.accept(nome)
+                
                 elif cmd.startswith('negar '):
                     nome = cmd.split(' ', 1)[1]
                     queue_mgr.reject(nome)
+                
                 elif cmd == 'sair':
                     logging.info("Saindo...")
                     break
@@ -518,3 +530,18 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+    
+
+
+    #Falta por módulo de "Contatos", ou seja, lista pessoas que você salvou a chave pública, porta e UDP para que não precise do servidor para iniciar batalha
+        #Provavlemente vale a pena deixar um arquivo txt para um usuário sempre iniciar com aquelas configurações, e nese também vai guardar os contatos
+
+    #Falta colocar um módulo de gerenciar escolha do pokemon e colocar mais pokemon na base de dados
+
+    #Falta chat
+
+    #Falta interface gráfica
+
+    #Falta colocar um hash cumulativo para o servidor validar se é uma vitória válida ou não.
