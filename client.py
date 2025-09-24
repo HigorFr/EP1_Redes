@@ -19,7 +19,7 @@ def input_default(prompt, default):
     return s if s else default
 
 
-
+#Adicionar aqui classe qeu vai gerenciar a base de pokemons e seus ataques
 
 
 
