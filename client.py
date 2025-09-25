@@ -86,7 +86,7 @@ class Network:
             s.bind(("0.0.0.0", self.udp_broadcast_port))
             logging.info(f"UDP listener rodando na porta {self.udp_broadcast_port}")
 
-            logging.info(f"UDP listener rodando na porta {self.udp_broadcast_port}")
+        
             while True:
                 try:
                     data, addr = s.recvfrom(BUFFER_SIZE)
@@ -236,7 +236,7 @@ class Battle:
                 return self.me
             return None
 
-    def __init__(self, my_name, p2p_port, opp_info, dial, network, crypto, server_sock):
+    def __init__(self, my_name, p2p_port, opp_info, dial, network, crypto, server_sock, input_queue):
         self.state = Battle.State(my_name, opp_info['name'], dial)
         self.my_name = my_name
         self.p2p_port = p2p_port
@@ -248,6 +248,7 @@ class Battle:
         self.shared_key = None
         self.conn = None
         self.fileobj = None
+        self.input_queue = input_queue
 
     def prepare(self):
         if self.dial:
@@ -276,10 +277,16 @@ class Battle:
         logging.info(f"=== BATALHA: {self.state.me} vs {self.state.opp} ===")
         logging.info("Movimentos disponíveis: %s", ", ".join(MOVES.keys()))
 
+        drenar_fila(self.input_queue) #apaga tudo se tiver algo
+
         while not self.state.finished():
             try:                
                 if self.state.my_turn:
-                    move = input("Seu movimento: ").strip()
+
+                    raw = self.input_queue.get()   #ler o movimento da fila de entradas
+                    move = raw.strip()
+
+
                     if move not in MOVES:
                         logging.info("Movimento inválido")
                         continue
@@ -317,7 +324,7 @@ class Battle:
 
 
 class QueueManager:
-    def __init__(self, my_name, p2p_port, network, crypto, server_sock, udp_port):
+    def __init__(self, my_name, p2p_port, network, crypto, server_sock, udp_port, input_queue):
         self.my_name = my_name
         self.p2p_port = p2p_port
         self.network = network
@@ -327,6 +334,7 @@ class QueueManager:
         self.enviados = {}
         self.recebidos = {}
         self.battle_started = threading.Event()
+        self.input_queue = input_queue
 
 
     def get_battle_started(self):
@@ -381,9 +389,13 @@ class QueueManager:
         if resposta and resposta.get('res') == 'ACE':
             logging.info("%s aceitou. Iniciando batalha (sou quem liga).", op_name)
             self.battle_started.set()
-            b = Battle(self.my_name, self.p2p_port, opp, dial=True, network=self.network, crypto=self.crypto, server_sock=self.server_sock)
+            b = Battle(self.my_name, self.p2p_port, opp, dial=True, network=self.network, crypto=self.crypto, server_sock=self.server_sock, input_queue=self.input_queue)
             b.prepare()
             b.loop()
+
+
+            #gambiarra, tem que arrumar
+            print("Digite comando (list, desafiar <nome>, aleatorio, aceitar <nome>, negar <nome>, sair): ", flush=True)
             self.battle_started.clear()
 
 
@@ -427,12 +439,15 @@ class QueueManager:
 
         logging.info("Aceitei desafio de %s", opp_name)
         self.battle_started.set()
-        b = Battle(self.my_name, self.p2p_port, opp, dial=False, network=self.network, crypto=self.crypto, server_sock=self.server_sock)
+        b = Battle(self.my_name, self.p2p_port, opp, dial=False, network=self.network, crypto=self.crypto, server_sock=self.server_sock, input_queue=self.input_queue)
         try:
             b.prepare()
         except:
             return
         b.loop()
+
+        #gambiarra, tem que arrumar
+        print("Digite comando (list, desafiar <nome>, aleatorio, aceitar <nome>, negar <nome>, sair): ", flush=True)
         self.battle_started.clear()
 
     def reject(self, opp_name):
@@ -443,6 +458,35 @@ class QueueManager:
         res = {"type": "RES", "opp": self.my_name, "res": "NEG"}
         self.network.udp_send(res, ip=opp.get('ip', '255.255.255.255'), port=opp.get('udp_port', '255.255.255.255'))
         logging.info("Recusei desafio de %s", opp_name)
+
+
+class Leitor(threading.Thread):
+    def __init__(self, input_queue):
+        super().__init__(daemon=True)
+        self.input_queue = input_queue
+
+    def run(self):
+        while True:
+            try:
+                line = sys.stdin.readline()
+                if not line:
+                    break
+                # remove \n mas preserva string vazia caso usuário só pressione Enter
+                self.input_queue.put(line.rstrip("\n"))
+            except Exception:
+                break
+
+    # util para drenar a fila (descartar tudo que foi lido antes)
+def drenar_fila(q):
+    try:
+        while True:
+            q.get_nowait()
+    except queue.Empty:
+        return
+
+
+
+
 
 def main():
 
@@ -455,9 +499,17 @@ def main():
     udp_port = int(sys.argv[4]) if len(sys.argv) > 4 else int(input_default("Porta UDP broadcast (Vazio para 5001)", "5001"))
     p2p_port = int(sys.argv[5]) if len(sys.argv) > 5 else int(input_default("Porta P2P (Vazio para 7000)", "7000"))
 
+    input_queue = queue.Queue()
+    input_reader = Leitor(input_queue)
+    input_reader.start()
+
+  
+  
     network = Network(udp_broadcast_port=udp_port)
     crypto = Crypto()
     server = ServerClient(server_ip, server_port)
+
+
 
     def udp_handler(msg, addr):
         try:
@@ -480,14 +532,45 @@ def main():
             logging.exception("Erro tratando mensagem UDP")
 
     server_sock = server.register(my_name, p2p_port, crypto.public_key_b64(), udp_port)
-    queue_mgr = QueueManager(my_name, p2p_port, network, crypto, server_sock, udp_port)
+    queue_mgr = QueueManager(my_name, p2p_port, network, crypto, server_sock, udp_port, input_queue)
     network.start_udp_listener(udp_handler)
 
 
     try:
         while True:
-            if not queue_mgr.get_battle_started(): #Tem que arrumar isso aqui, esse input já está aguardando enviar mesmo antes de inciar a batalha, então o primeiro movimento de ataque sempre vem para cá e dá erro.
-                cmd = input("Digite comando (list, desafiar <nome>, aleatorio, aceitar <nome>, negar <nome>, sair): ").strip()
+                
+            
+                if queue_mgr.get_battle_started():
+                    #pra não ficar toda hora olhando
+                    time.sleep(0.2)
+                    continue
+
+
+
+                try:
+                    # bloqueante até o usuário digitar algo
+                    raw = input_queue.get(timeout=0.1)
+                except Exception:
+                    continue
+
+                
+               
+                if queue_mgr.get_battle_started():
+                    drenar_fila(input_queue)
+                    continue
+
+        
+
+                cmd = raw.strip()
+                if not cmd:
+                    continue
+
+
+
+
+                print("Digite comando (list, desafiar <nome>, aleatorio, aceitar <nome>, negar <nome>, sair): ", flush=True)
+
+
                 if cmd == 'list':
                     ServerClient.send_json(server_sock, {"cmd": "LIST"})
                     resp = ServerClient.recv_json(server_sock)
