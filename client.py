@@ -7,6 +7,7 @@ import os
 import queue
 import time
 import logging
+import csv
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import serialization
@@ -20,9 +21,62 @@ def input_default(prompt, default):
 
 
 #Adicionar aqui classe qeu vai gerenciar a base de pokemons e seus ataques
+class Pokemon:
+    """Guarda os atributos de um único Pokémon."""
+    def __init__(self, name, hp, attack, defense, speed, type1, type2):
+        self.name = name
+        self.hp = int(hp)
+        self.attack = int(attack)
+        self.defense = int(defense)
+        self.speed = int(speed)
+        self.type1 = type1
+        self.type2 = type2
+        # Por enquanto, vamos assumir que todos podem usar os mesmos movimentos
+        self.moves = list(MOVES.keys())
 
+    def __repr__(self):
+        return f"<Pokemon: {self.name}, HP: {self.hp}>"
 
+class PokemonDB:
+    """Carrega e gerencia a base de dados de Pokémon a partir de um arquivo CSV."""
+    def __init__(self, filename='pokemon.csv'):
+        self.filename = filename
+        self.pokemons = {} # Dicionário para guardar os pokémons por nome
 
+    def load(self):
+        """Lê o arquivo CSV e popula o dicionário de Pokémons."""
+        try:
+            with open(self.filename, mode='r', encoding='utf-8') as infile:
+                # DictReader trata a primeira linha como cabeçalho automaticamente
+                reader = csv.DictReader(infile)
+                for row in reader:
+                    # Cria um objeto Pokemon para cada linha no CSV
+                    p = Pokemon(
+                        name=row['name'],
+                        hp=row['hp'],
+                        attack=row['attack'],
+                        defense=row['defense'],
+                        speed=row['speed'],
+                        type1=row['type1'],
+                        type2=row['type2']
+                    )
+                    # Adiciona ao dicionário, com o nome em minúsculas como chave para facilitar a busca
+                    self.pokemons[p.name.lower()] = p
+            logging.info(f"{len(self.pokemons)} Pokémon carregados da base de dados.")
+        except FileNotFoundError:
+            logging.error(f"Erro: Arquivo da base de dados '{self.filename}' não encontrado.")
+            raise SystemExit(1)
+        except Exception as e:
+            logging.error(f"Erro ao carregar a base de dados de Pokémon: {e}")
+            raise SystemExit(1)
+
+    def get_pokemon(self, name):
+        """Busca um Pokémon pelo nome (insensível a maiúsculas/minúsculas)."""
+        return self.pokemons.get(name.lower())
+
+    def get_all_names(self):
+        """Retorna uma lista com os nomes de todos os Pokémon disponíveis."""
+        return [p.name for p in self.pokemons.values()]
 
 
 
@@ -498,6 +552,10 @@ def main():
     server_port = int(sys.argv[3]) if len(sys.argv) > 3 else int(input_default("Porta do servidor (Vazio para 5000)", "5000"))
     udp_port = int(sys.argv[4]) if len(sys.argv) > 4 else int(input_default("Porta UDP broadcast (Vazio para 5001)", "5001"))
     p2p_port = int(sys.argv[5]) if len(sys.argv) > 5 else int(input_default("Porta P2P (Vazio para 7000)", "7000"))
+
+# Carrega a base de dados de Pokémon
+    pokedex = PokemonDB()
+    pokedex.load()
 
     input_queue = queue.Queue()
     input_reader = Leitor(input_queue)
