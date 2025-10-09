@@ -7,6 +7,7 @@ import os
 import queue
 import time
 import logging
+import csv
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import serialization
@@ -20,10 +21,134 @@ def input_default(prompt, default):
 
 
 #Adicionar aqui classe qeu vai gerenciar a base de pokemons e seus ataques
+class Pokemon:
+    """Guarda os atributos de um único Pokémon."""
+    def __init__(self, name, hp, attack, defense, speed, type1, type2):
+        self.name = name
+        self.hp = int(hp)
+        self.attack = int(attack)
+        self.defense = int(defense)
+        self.speed = int(speed)
+        self.type1 = type1
+        self.type2 = type2
+        # Por enquanto, vamos assumir que todos podem usar os mesmos movimentos
+        self.moves = list(MOVES.keys())
+
+    def __repr__(self):
+        return f"<Pokemon: {self.name}, HP: {self.hp}>"
+
+class PokemonDB:
+    """Carrega e gerencia a base de dados de Pokémon a partir de um arquivo CSV."""
+    def __init__(self, filename='pokemon.csv'):
+        self.filename = filename
+        self.pokemons = {} # Dicionário para guardar os pokémons por nome
+
+    # Em client.py, SUBSTITUA a classe PokemonDB inteira por esta
+
+class PokemonDB:
+    """Carrega e gerencia a base de dados de Pokémon a partir de um arquivo CSV."""
+    def __init__(self, filename='pokemon.csv'):
+        self.filename = filename
+        self.pokemons = {} # Dicionário para guardar os pokémons por nome
+
+    # Em client.py, SUBSTITUA a classe PokemonDB inteira por esta versão
+
+class PokemonDB:
+    """Carrega e gerencia a base de dados de Pokémon a partir de um arquivo CSV."""
+    def __init__(self, filename='pokemon.csv'):
+        self.filename = filename
+        self.pokemons = {} # Dicionário para guardar os pokémons por nome
+
+    def load(self):
+        """Lê o arquivo CSV e popula o dicionário de Pokémons."""
+        try:
+            with open(self.filename, mode='r', encoding='utf-8-sig') as infile:
+                reader = csv.DictReader(infile)
+                for row in reader:
+                    ### MUDANÇA DEFINITIVA: Limpa as chaves (minúsculas E sem espaços) ###
+                    row_clean = {key.lower().replace(' ', ''): value for key, value in row.items()}
+
+                    # Agora, usamos o dicionário com as chaves limpas
+                    p = Pokemon(
+                        name=row_clean['name'],
+                        hp=row_clean['hp'],
+                        attack=row_clean['attack'],
+                        defense=row_clean['defense'],
+                        speed=row_clean['speed'],
+                        type1=row_clean['type1'],
+                        type2=row_clean['type2']
+                    )
+                    self.pokemons[p.name.lower()] = p
+            logging.info(f"{len(self.pokemons)} Pokémon carregados da base de dados.")
+        except FileNotFoundError:
+            logging.error(f"Erro: Arquivo da base de dados '{self.filename}' não encontrado.")
+            raise SystemExit(1)
+        except KeyError as e:
+            logging.error(f"Erro ao carregar base de dados: a coluna {e} não foi encontrada no arquivo pokemon.csv.")
+            logging.error("Verifique se todos os cabeçalhos (Name, HP, Attack, Defense, Speed, Type 1, Type 2) existem no seu CSV.")
+            raise SystemExit(1)
+        except Exception as e:
+            logging.error(f"Erro ao carregar a base de dados de Pokémon: {e}")
+            raise SystemExit(1)
+
+    def get_pokemon(self, name):
+        """Busca um Pokémon pelo nome (insensível a maiúsculas/minúsculas)."""
+        return self.pokemons.get(name.lower())
+
+    def get_all_names(self):
+        """Retorna uma lista com os nomes de todos os Pokémon disponíveis."""
+        return [p.name for p in self.pokemons.values()]
+    
+    def get_pokemon(self, name):
+        """Busca um Pokémon pelo nome (insensível a maiúsculas/minúsculas)."""
+        return self.pokemons.get(name.lower())
+
+    def get_all_names(self):
+        """Retorna uma lista com os nomes de todos os Pokémon disponíveis."""
+        return [p.name for p in self.pokemons.values()]
+
+    def get_pokemon(self, name):
+        """Busca um Pokémon pelo nome (insensível a maiúsculas/minúsculas)."""
+        return self.pokemons.get(name.lower())
+
+    def get_all_names(self):
+        """Retorna uma lista com os nomes de todos os Pokémon disponíveis."""
+        return [p.name for p in self.pokemons.values()]
 
 
+# Em client.py, SUBSTITUA a função choose_pokemon
 
+def choose_pokemon(pokedex: PokemonDB, input_queue: queue.Queue):
+    """Mostra a lista de Pokémon e gerencia a escolha do jogador a partir da fila de entrada."""
+    print("\n--- Escolha seu Pokémon para a batalha! ---")
+    available_pokemons = pokedex.get_all_names()
+    
+    for i, name in enumerate(available_pokemons, 1):
+        print(f"  {i}. {name}")
+    print("Digite o número do Pokémon escolhido: ", end="", flush=True)
 
+    while True:
+        try:
+            # ### MUDANÇA: Pega a entrada da FILA, não mais do input() ###
+            # Espera até 60 segundos pela escolha do jogador.
+            choice = input_queue.get(timeout=60)
+            
+            if not choice: continue
+            
+            choice_idx = int(choice) - 1
+            
+            if 0 <= choice_idx < len(available_pokemons):
+                chosen_name = available_pokemons[choice_idx]
+                chosen_pokemon = pokedex.get_pokemon(chosen_name)
+                print(f"Você escolheu {chosen_pokemon.name}!")
+                return chosen_pokemon
+            else:
+                print("Número inválido. Tente novamente: ", end="", flush=True)
+        except queue.Empty:
+            print("\nTempo para escolha esgotado.")
+            return None # Retorna None se o jogador não escolher a tempo
+        except (ValueError, IndexError):
+            print("\nEntrada inválida. Por favor, digite um número da lista: ", end="", flush=True)
 
 
 MOVES = {
@@ -208,12 +333,15 @@ class ServerClient:
 
 class Battle:
     class State:
-        def __init__(self, me, opp, turn):
-            self.me = me
-            self.opp = opp
-            self.my_hp = 100
-            self.opp_hp = 100
-            self.my_turn = turn
+        def __init__(self, my_pokemon: Pokemon, opp_pokemon: Pokemon, my_turn: bool):
+            self.me = my_pokemon.name
+            self.opp = opp_pokemon.name
+            self.my_pokemon = my_pokemon
+            self.opp_pokemon = opp_pokemon
+            # Usa o HP dos Pokémon escolhidos
+            self.my_hp = my_pokemon.hp
+            self.opp_hp = opp_pokemon.hp
+            self.my_turn = my_turn
             self.lock = threading.Lock()
 
         def apply_move(self, move, by_me):
@@ -236,9 +364,8 @@ class Battle:
                 return self.me
             return None
 
-    def __init__(self, my_name, p2p_port, opp_info, dial, network, crypto, server_sock, input_queue):
-        self.state = Battle.State(my_name, opp_info['name'], dial)
-        self.my_name = my_name
+    def __init__(self, my_pokemon: Pokemon, p2p_port, opp_info, dial, network, crypto, server_sock, input_queue, pokedex):
+        self.my_pokemon = my_pokemon
         self.p2p_port = p2p_port
         self.opp_info = opp_info
         self.dial = dial
@@ -249,17 +376,47 @@ class Battle:
         self.conn = None
         self.fileobj = None
         self.input_queue = input_queue
+        self.pokedex = pokedex # ### MUDANÇA: Armazena a pokedex ###
+        self.state = None
 
     def prepare(self):
+        """Estabelece a conexão P2P e troca as informações dos Pokémon."""
         if self.dial:
             self.conn = self.network.p2p_connect(self.opp_info['ip'], int(self.opp_info['p2p_port']))
-
-
         else:
             self.conn = self.network.p2p_listen(self.p2p_port, backlog=1, timeout=10)
+        
+        if not self.conn: return False
+
         self.fileobj = self.conn.makefile("rwb")
         self.shared_key = self.crypto.shared_key(self.opp_info['public_key'])
-        logging.debug("Shared key criada com sucesso")
+        
+        my_choice_msg = Crypto.encrypt_json(self.shared_key, {"type": "POKEMON_CHOICE", "name": self.my_pokemon.name})
+        Network.send_line(self.conn, my_choice_msg.encode())
+
+        self.conn.settimeout(10.0)
+        opp_choice_line = Network.recv_line(self.fileobj)
+        if not opp_choice_line:
+            logging.error("Conexão P2P perdida ao receber escolha do oponente.")
+            return False
+        
+        opp_choice_msg = Crypto.decrypt_json(self.shared_key, opp_choice_line.decode())
+        
+        if not opp_choice_msg or opp_choice_msg.get("type") != "POKEMON_CHOICE":
+            logging.error("Falha ao receber a escolha de Pokémon do oponente.")
+            return False
+
+        opp_pokemon_name = opp_choice_msg.get("name")
+        
+        ### MUDANÇA: Busca o Pokémon do oponente na POKEDEX em vez de criar um falso ###
+        opp_pokemon = self.pokedex.get_pokemon(opp_pokemon_name)
+        if not opp_pokemon:
+            logging.error(f"Oponente escolheu um Pokémon inválido: {opp_pokemon_name}")
+            return False
+            
+        self.state = Battle.State(my_pokemon=self.my_pokemon, opp_pokemon=opp_pokemon, my_turn=self.dial)
+        logging.debug("Shared key e troca de Pokémon feitos com sucesso")
+        return True
 
     def send_encrypted(self, obj):
         assert self.shared_key is not None
@@ -324,131 +481,92 @@ class Battle:
 
 
 class QueueManager:
-    def __init__(self, my_name, p2p_port, network, crypto, server_sock, udp_port, input_queue):
+    # ### MUDANÇA: O construtor agora aceita 'pokedex' ###
+    def __init__(self, my_name, p2p_port, network, crypto, server_sock, udp_port, input_queue, pokedex):
         self.my_name = my_name
         self.p2p_port = p2p_port
         self.network = network
         self.crypto = crypto
         self.server_sock = server_sock
-        self.udp_port = udp_port  # usado como fallback no envio UDP
+        self.udp_port = udp_port
         self.enviados = {}
         self.recebidos = {}
         self.battle_started = threading.Event()
         self.input_queue = input_queue
-
+        self.pokedex = pokedex # ### MUDANÇA: Armazena a pokedex ###
 
     def get_battle_started(self):
         return self.battle_started.is_set()
 
-    def add_send(self, opp):
+    def add_send(self, opp, my_pokemon):
         desafio_id = f"{self.my_name}-{opp['name']}"
         q = queue.Queue()
         self.enviados[desafio_id] = q
-        t = threading.Thread(target=self._process_send, args=(opp, q), daemon=True)
+        t = threading.Thread(target=self._process_send, args=(opp, q, my_pokemon), daemon=True)
         t.start()
 
-    def _process_send(self, opp, q):
-        if self.battle_started.is_set():
-            return
-
+    def _process_send(self, opp, q, my_pokemon):
+        if self.battle_started.is_set(): return
+        
         op_name = opp['name']
-        #usa a udp_port do oponente, se vier do servidor, ou tenta usar o proprio como padrão caso não venha
         dest_udp_port = opp.get('udp_port', self.udp_port)
-
-        msg = {
-            "type": "DES",
-            "opponent": {
-                "name": self.my_name,
-                "ip": None,
-                "udp_port": self.udp_port,
-                "p2p_port": self.p2p_port,
-                "public_key": self.crypto.public_key_b64()
-            }
-        }
-
-
+        msg = { "type": "DES", "opponent": { "name": self.my_name, "ip": None, "udp_port": self.udp_port, "p2p_port": self.p2p_port, "public_key": self.crypto.public_key_b64() } }
         try:
             self.network.udp_send(msg, ip=opp.get('ip', '255.255.255.255'), port=dest_udp_port)
-            
             logging.info("Desafio enviado para %s", op_name)
-            print(opp.get('ip', '255.255.255.255'))
-            print(dest_udp_port)
-
         except Exception as e:
             logging.error("Falha ao enviar desafio: %s", e)
             return
+
         try:
             resposta = q.get(timeout=20)
         except queue.Empty:
             logging.info("Timeout aguardando resposta de %s", op_name)
             return
         
-
-        if self.battle_started.is_set():
-            return
+        if self.battle_started.is_set(): return
+            
         if resposta and resposta.get('res') == 'ACE':
             logging.info("%s aceitou. Iniciando batalha (sou quem liga).", op_name)
             self.battle_started.set()
-            b = Battle(self.my_name, self.p2p_port, opp, dial=True, network=self.network, crypto=self.crypto, server_sock=self.server_sock, input_queue=self.input_queue)
-            b.prepare()
-            b.loop()
-
-
-            #gambiarra, tem que arrumar
-            print("Digite comando (list, desafiar <nome>, aleatorio, aceitar <nome>, negar <nome>, sair): ", flush=True)
+            # ### MUDANÇA: Passa a pokedex para a classe Battle ###
+            b = Battle(my_pokemon, self.p2p_port, opp, dial=True, network=self.network, crypto=self.crypto, server_sock=self.server_sock, input_queue=self.input_queue, pokedex=self.pokedex)
+            if b.prepare():
+                b.loop()
             self.battle_started.clear()
-
-
         else:
             logging.info("%s recusou o desafio.", op_name)
-
-
 
     def receive_challenge(self, opp):
         logging.info("Desafio recebido de %s", opp['name'])
         opp["hora"] = time.time()
         self.recebidos[opp['name']] = opp
 
-
-
-
-    def accept(self, opp_name):
+    def accept(self, opp_name, my_pokemon):
         if opp_name not in self.recebidos:
             logging.info("Nenhum desafio de %s", opp_name)
             return
         
-        #mudar, tem que apagar todo mundo
         opp = self.recebidos.pop(opp_name)
-
 
         if time.time() - opp["hora"] > 20:
             logging.info("Desafio de %s expirou", opp_name)
             return
+            
         res = {"type": "RES", "opp": self.my_name, "res": "ACE"}
-        
-        
         self.network.udp_send(res, ip=opp.get('ip', '255.255.255.255'), port=opp.get('udp_port', self.udp_port))
-
-
-        print("Enviado para:")
-        print(opp.get('udp_port', '255.255.255.255'))
-
-        print('\n')
-
-
-
+        
         logging.info("Aceitei desafio de %s", opp_name)
         self.battle_started.set()
-        b = Battle(self.my_name, self.p2p_port, opp, dial=False, network=self.network, crypto=self.crypto, server_sock=self.server_sock, input_queue=self.input_queue)
+        # ### MUDANÇA: Passa a pokedex para a classe Battle ###
+        b = Battle(my_pokemon, self.p2p_port, opp, dial=False, network=self.network, crypto=self.crypto, server_sock=self.server_sock, input_queue=self.input_queue, pokedex=self.pokedex)
         try:
-            b.prepare()
-        except:
-            return
-        b.loop()
-
-        #gambiarra, tem que arrumar
-        print("Digite comando (list, desafiar <nome>, aleatorio, aceitar <nome>, negar <nome>, sair): ", flush=True)
-        self.battle_started.clear()
+            if b.prepare():
+                b.loop()
+        except Exception as e:
+            logging.error("Erro ao preparar batalha: %s", e)
+        finally:
+            self.battle_started.clear()
 
     def reject(self, opp_name):
         if opp_name not in self.recebidos:
@@ -456,9 +574,8 @@ class QueueManager:
             return
         opp = self.recebidos.pop(opp_name)
         res = {"type": "RES", "opp": self.my_name, "res": "NEG"}
-        self.network.udp_send(res, ip=opp.get('ip', '255.255.255.255'), port=opp.get('udp_port', '255.255.255.255'))
+        self.network.udp_send(res, ip=opp.get('ip', '255.255.255.255'), port=opp.get('udp_port', self.udp_port))
         logging.info("Recusei desafio de %s", opp_name)
-
 
 class Leitor(threading.Thread):
     def __init__(self, input_queue):
@@ -488,28 +605,28 @@ def drenar_fila(q):
 
 
 
+# Em client.py, SUBSTITUA a função main
+
+# Em client.py, SUBSTITUA a função main
+
 def main():
-
-    # Nome do usuário
-    print("Uso fácil: python client_refactor.py <meu_nome> <ip_server> <porta_server> <minha_porta_udp> <minha_porta_p2p>")
-
+    print("Uso fácil: python client.py <meu_nome> <ip_server> <porta_server> <minha_porta_udp> <minha_porta_p2p>")
     my_name = sys.argv[1] if len(sys.argv) > 1 else input("Seu nome: ").strip()
     server_ip = sys.argv[2] if len(sys.argv) > 2 else input_default("IP do servidor (Vazio para 127.0.0.1)", "127.0.0.1")
     server_port = int(sys.argv[3]) if len(sys.argv) > 3 else int(input_default("Porta do servidor (Vazio para 5000)", "5000"))
     udp_port = int(sys.argv[4]) if len(sys.argv) > 4 else int(input_default("Porta UDP broadcast (Vazio para 5001)", "5001"))
     p2p_port = int(sys.argv[5]) if len(sys.argv) > 5 else int(input_default("Porta P2P (Vazio para 7000)", "7000"))
 
+    pokedex = PokemonDB()
+    pokedex.load()
+
     input_queue = queue.Queue()
     input_reader = Leitor(input_queue)
     input_reader.start()
 
-  
-  
     network = Network(udp_broadcast_port=udp_port)
     crypto = Crypto()
     server = ServerClient(server_ip, server_port)
-
-
 
     def udp_handler(msg, addr):
         try:
@@ -517,93 +634,88 @@ def main():
             if t == 'DES':
                 opp = msg.get('opponent')
                 opp['ip'] = addr[0]
-                opp['porta'] = addr[1]
                 queue_mgr.receive_challenge(opp)
-
             elif t == 'RES':
                 opp_name = msg.get('opp')
                 desafio_id = f"{my_name}-{opp_name}"
                 q = queue_mgr.enviados.get(desafio_id)
                 if q:
                     q.put(msg)
-
-
         except Exception:
             logging.exception("Erro tratando mensagem UDP")
 
     server_sock = server.register(my_name, p2p_port, crypto.public_key_b64(), udp_port)
-    queue_mgr = QueueManager(my_name, p2p_port, network, crypto, server_sock, udp_port, input_queue)
+    queue_mgr = QueueManager(my_name, p2p_port, network, crypto, server_sock, udp_port, input_queue, pokedex)
     network.start_udp_listener(udp_handler)
-
-
+    
     try:
         while True:
-                
+            if queue_mgr.get_battle_started():
+                time.sleep(0.2)
+                continue
             
-                if queue_mgr.get_battle_started():
-                    #pra não ficar toda hora olhando
-                    time.sleep(0.2)
-                    continue
+            print("\nDigite comando (list, desafiar <nome>, aleatorio, aceitar <nome>, negar <nome>, sair): ", end="", flush=True)
 
+            try:
+                raw = input_queue.get()
+            except (queue.Empty, KeyboardInterrupt):
+                continue
 
+            if queue_mgr.get_battle_started():
+                drenar_fila(input_queue)
+                continue
 
-                try:
-                    # bloqueante até o usuário digitar algo
-                    raw = input_queue.get(timeout=0.1)
-                except Exception:
-                    continue
+            cmd = raw.strip()
+            if not cmd: continue
 
+            parts = cmd.split()
+            command = parts[0].lower()
+            args = parts[1:]
+
+            if command == 'list':
+                ServerClient.send_json(server_sock, {"cmd": "LIST"})
+                resp = ServerClient.recv_json(server_sock)
+                if resp: print("\nJogadores online:", resp.get("players", []))
+
+            elif command in ['desafiar', 'aleatorio', 'aceitar']:
+                opp_info = None
                 
-               
-                if queue_mgr.get_battle_started():
-                    drenar_fila(input_queue)
-                    continue
-
-        
-
-                cmd = raw.strip()
-                if not cmd:
-                    continue
-
-
-
-
-                print("Digite comando (list, desafiar <nome>, aleatorio, aceitar <nome>, negar <nome>, sair): ", flush=True)
-
-
-                if cmd == 'list':
-                    ServerClient.send_json(server_sock, {"cmd": "LIST"})
-                    resp = ServerClient.recv_json(server_sock)
-                    print(resp)
-
-                elif cmd.startswith('desafiar '):
-                    alvo = cmd.split(' ', 1)[1]
-                    if alvo == my_name:
-                        logging.info("Você não pode se desafiar")
+                if command == 'desafiar' or command == 'aceitar':
+                    if not args:
+                        logging.warning(f"Uso: {command} <nome_do_oponente>")
                         continue
-                    opp = server.match(server_sock, target=alvo)
-                    if opp:
+                    target = args[0]
+                    if target == my_name:
+                        logging.warning("Você não pode se desafiar.")
+                        continue
+                    opp_info = server.match(server_sock, target=target)
+                
+                elif command == 'aleatorio':
+                    opp_info = server.match(server_sock)
 
-                        queue_mgr.add_send(opp)
-                
-                elif cmd == 'aleatorio':
-                    opp = server.match(server_sock)
-                    if opp:
-                        queue_mgr.add_send(opp)
-                
-                elif cmd.startswith('aceitar '):
-                    nome = cmd.split(' ', 1)[1]
-                    queue_mgr.accept(nome)
-                
-                elif cmd.startswith('negar '):
-                    nome = cmd.split(' ', 1)[1]
-                    queue_mgr.reject(nome)
-                
-                elif cmd == 'sair':
-                    logging.info("Saindo...")
-                    break
+                if opp_info:
+                    # ### MUDANÇA: Passa a input_queue para a função ###
+                    my_pokemon = choose_pokemon(pokedex, input_queue)
+                    
+                    # Se o jogador não escolheu um pokemon (timeout), não faz nada
+                    if not my_pokemon:
+                        continue
+                        
+                    if command == 'aceitar':
+                        queue_mgr.accept(opp_info['name'], my_pokemon)
+                    else: # Desafiar ou Aleatório
+                        queue_mgr.add_send(opp_info, my_pokemon)
                 else:
-                    logging.info("Comando inválido")
+                    logging.warning("Não foi possível encontrar um oponente.")
+
+            elif command == 'negar':
+                if not args: logging.warning("Uso: negar <nome>"); continue
+                queue_mgr.reject(args[0])
+            
+            elif command == 'sair':
+                logging.info("Saindo..."); break
+            else:
+                logging.info("Comando inválido")
                 
     finally:
         try:
@@ -613,7 +725,6 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
     
 
