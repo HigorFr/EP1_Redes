@@ -43,22 +43,6 @@ class PokemonDB:
         self.filename = filename
         self.pokemons = {} # Dicionário para guardar os pokémons por nome
 
-    # Em client.py, SUBSTITUA a classe PokemonDB inteira por esta
-
-class PokemonDB:
-    """Carrega e gerencia a base de dados de Pokémon a partir de um arquivo CSV."""
-    def __init__(self, filename='pokemon.csv'):
-        self.filename = filename
-        self.pokemons = {} # Dicionário para guardar os pokémons por nome
-
-    # Em client.py, SUBSTITUA a classe PokemonDB inteira por esta versão
-
-class PokemonDB:
-    """Carrega e gerencia a base de dados de Pokémon a partir de um arquivo CSV."""
-    def __init__(self, filename='pokemon.csv'):
-        self.filename = filename
-        self.pokemons = {} # Dicionário para guardar os pokémons por nome
-
     def load(self):
         """Lê o arquivo CSV e popula o dicionário de Pokémons."""
         try:
@@ -90,22 +74,6 @@ class PokemonDB:
         except Exception as e:
             logging.error(f"Erro ao carregar a base de dados de Pokémon: {e}")
             raise SystemExit(1)
-
-    def get_pokemon(self, name):
-        """Busca um Pokémon pelo nome (insensível a maiúsculas/minúsculas)."""
-        return self.pokemons.get(name.lower())
-
-    def get_all_names(self):
-        """Retorna uma lista com os nomes de todos os Pokémon disponíveis."""
-        return [p.name for p in self.pokemons.values()]
-    
-    def get_pokemon(self, name):
-        """Busca um Pokémon pelo nome (insensível a maiúsculas/minúsculas)."""
-        return self.pokemons.get(name.lower())
-
-    def get_all_names(self):
-        """Retorna uma lista com os nomes de todos os Pokémon disponíveis."""
-        return [p.name for p in self.pokemons.values()]
 
     def get_pokemon(self, name):
         """Busca um Pokémon pelo nome (insensível a maiúsculas/minúsculas)."""
