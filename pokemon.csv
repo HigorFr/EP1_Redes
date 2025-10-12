@@ -97,4 +97,6 @@
 88,Grimer,Poison,,325,80,80,50,40,50,25,1,False
 89,Muk,Poison,,500,105,105,75,65,100,50,1,False
 90,Shellder,Water,,305,30,65,100,45,25,40,1,False
+91,Cloyster,Water,Ice,525,50,95,180,85,45,70,1,False
+92,Gastly,Ghost,Poison,310,30,35,30,100,35,80,1,False
 
