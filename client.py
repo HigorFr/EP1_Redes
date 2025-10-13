@@ -241,10 +241,10 @@ class Network:
 
 class ServerClient:
     def __init__(self, server_ip, server_port):
-        self.server_ip = server_ip 
+        self.server_ip = server_ip
         self.server_port = server_port
 
-    ### MUDANÇA CRÍTICA: send_json agora detecta erros e retorna True/False ###
+    # === MUDANÇA CRÍTICA: send_json agora detecta erros e retorna True/False ===
     @staticmethod
     def send_json(sock, obj):
         """Envia um objeto JSON e retorna True em caso de sucesso, False se a conexão falhar."""
@@ -255,19 +255,25 @@ class ServerClient:
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
             return False
 
-    ### MUDANÇA CRÍTICA: recv_json agora lida com erros de forma mais robusta ###
+    # === MUDANÇA CRÍTICA: recv_json agora lida com erros de forma mais robusta ===
     @staticmethod
     def recv_json(sock):
         """Recebe um objeto JSON e retorna None se a conexão falhar."""
         buf = b""
-        while True:
-            try:
+        sock.settimeout(5.0)  # Adiciona timeout para evitar bloqueio eterno
+        try:
+            while True:
                 ch = sock.recv(1)
-                if not ch: return None # Conexão fechada pelo servidor
-                if ch == b"\n": break
+                if not ch:
+                    return None  # Conexão fechada
+                if ch == b"\n":
+                    break
                 buf += ch
-            except (ConnectionAbortedError, ConnectionResetError, OSError):
-                return None
+        except (ConnectionAbortedError, ConnectionResetError, OSError, socket.timeout):
+            return None
+        finally:
+            sock.settimeout(None)  # Remove o timeout
+
         try:
             return json.loads(buf.decode())
         except (json.JSONDecodeError, UnicodeDecodeError):
@@ -282,8 +288,11 @@ class ServerClient:
             return None
 
         if not self.send_json(s, {
-            "cmd": "REGISTER", "name": name, "p2p_port": p2p_port,
-            "udp_port": udp_port, "public_key": pk_b64
+            "cmd": "REGISTER",
+            "name": name,
+            "p2p_port": p2p_port,
+            "udp_port": udp_port,
+            "public_key": pk_b64
         }):
             logging.error("Falha ao enviar registro para o servidor.")
             return None
@@ -293,7 +302,7 @@ class ServerClient:
             logging.error("Falha ao registrar no servidor: %s", resp)
             s.close()
             return None
-            
+
         logging.info("Registrado no servidor com sucesso")
         return s
 
@@ -305,12 +314,16 @@ class ServerClient:
         resp = self.recv_json(sock)
         if not resp:
             return None
+
         if resp.get("type") == "MATCH":
             return resp["opponent"]
+
         if resp.get("type") == "ERR":
             logging.error("Erro do servidor: %s", resp.get("msg"))
             return None
+
         return None
+
     
 # Em client.py, SUBSTITUA a classe Battle inteira
 
@@ -613,14 +626,16 @@ def main():
             t = msg.get('type')
             if t == 'DES':
                 opp = msg.get('opponent')
-                if opp['name'] == my_name: return # Ignora desafios para si mesmo
+                if opp['name'] == my_name:
+                    return  # Ignora desafios para si mesmo
                 opp['ip'] = addr[0]
                 queue_mgr.receive_challenge(opp)
             elif t == 'RES':
                 opp_name = msg.get('opp')
                 desafio_id = f"{my_name}-{opp_name}"
                 q = queue_mgr.enviados.get(desafio_id)
-                if q: q.put(msg)
+                if q:
+                    q.put(msg)
         except Exception:
             logging.exception("Erro tratando mensagem UDP")
 
@@ -629,14 +644,18 @@ def main():
     network.start_udp_listener(udp_handler)
     threading.Thread(target=send_keepalive, args=(server_sock,), daemon=True).start()
 
-    
     try:
-        ### MUDANÇA ###: Loop principal atualizado com 'stats' e 'ranking'
+        # Loop principal com comandos atualizados: list, stats, ranking, etc.
         while True:
             if queue_mgr.get_battle_started():
-                time.sleep(0.2); continue
-            
-            print(f"\nDigite comando (list, stats, ranking, desafiar <nome>, aleatorio, aceitar <nome>, negar <nome>, sair): ", end="", flush=True)
+                time.sleep(0.2)
+                continue
+
+            print(
+                "\nDigite comando (list, stats, ranking, desafiar <nome>, aleatorio, aceitar <nome>, negar <nome>, sair): ",
+                end="",
+                flush=True
+            )
 
             try:
                 raw = input_queue.get()
@@ -644,20 +663,37 @@ def main():
                 continue
 
             if queue_mgr.get_battle_started():
-                drenar_fila(input_queue); continue
+                drenar_fila(input_queue)
+                continue
 
             cmd = raw.strip()
-            if not cmd: continue
+            if not cmd:
+                continue
 
             parts = cmd.split()
             command = parts[0].lower()
             args = parts[1:]
 
+            # ======== LIST ========
             if command == 'list':
-                ServerClient.send_json(server_sock, {"cmd": "LIST"})
-                resp = ServerClient.recv_json(server_sock)
-                if resp: print("\nJogadores online:", resp.get("players", []))
+                if not ServerClient.send_json(server_sock, {"cmd": "LIST"}):
+                    logging.error("Falha ao enviar comando LIST para o servidor")
+                    continue
 
+                resp = ServerClient.recv_json(server_sock)
+                if resp and resp.get("type") == "LIST":
+                    players = resp.get("players", [])
+                    if players:
+                        print("\n--- Jogadores Online ---")
+                        for player in players:
+                            print(f"  {player}")
+                        print("-------------------------")
+                    else:
+                        print("\nNão há jogadores online no momento.")
+                else:
+                    logging.error("Resposta inválida do servidor para LIST: %s", resp)
+
+            # ======== STATS ========
             elif command == 'stats':
                 ServerClient.send_json(server_sock, {"cmd": "GET_STATS"})
                 resp = ServerClient.recv_json(server_sock)
@@ -666,8 +702,10 @@ def main():
                     print(f"  Vitórias: {resp.get('wins', 0)}")
                     print(f"  Derrotas: {resp.get('losses', 0)}")
                     print(f"-------------------------")
-                else: print("Erro ao obter estatísticas:", resp)
+                else:
+                    print("Erro ao obter estatísticas:", resp)
 
+            # ======== RANKING ========
             elif command == 'ranking':
                 ServerClient.send_json(server_sock, {"cmd": "RANKING"})
                 resp = ServerClient.recv_json(server_sock)
@@ -676,21 +714,28 @@ def main():
                     for i, player in enumerate(resp.get("ranking", []), 1):
                         print(f"  {i}. {player['name']} - Vitórias: {player['wins']}, Derrotas: {player['losses']}")
                     print(f"-------------------------------------------")
-                else: print("Erro ao obter ranking:", resp)
+                else:
+                    print("Erro ao obter ranking:", resp)
 
+            # ======== DESAFIAR / ALEATORIO / ACEITAR ========
             elif command in ['desafiar', 'aleatorio', 'aceitar']:
                 opp_info = None
                 if command in ['desafiar', 'aceitar']:
-                    if not args: logging.warning(f"Uso: {command} <nome>"); continue
+                    if not args:
+                        logging.warning(f"Uso: {command} <nome>")
+                        continue
                     target = args[0]
-                    if target == my_name: logging.warning("Você não pode se desafiar."); continue
+                    if target == my_name:
+                        logging.warning("Você não pode se desafiar.")
+                        continue
                     opp_info = server.match(server_sock, target=target)
                 elif command == 'aleatorio':
                     opp_info = server.match(server_sock)
-                
+
                 if opp_info:
                     my_pokemon = choose_pokemon(pokedex, input_queue)
-                    if not my_pokemon: continue
+                    if not my_pokemon:
+                        continue
                     if command == 'aceitar':
                         queue_mgr.accept(opp_info['name'], my_pokemon)
                     else:
@@ -698,22 +743,32 @@ def main():
                 else:
                     logging.warning("Não foi possível encontrar um oponente.")
 
+            # ======== NEGAR ========
             elif command == 'negar':
-                if not args: logging.warning("Uso: negar <nome>"); continue
+                if not args:
+                    logging.warning("Uso: negar <nome>")
+                    continue
                 queue_mgr.reject(args[0])
-            
+
+            # ======== SAIR ========
             elif command == 'sair':
-                logging.info("Saindo..."); break
+                logging.info("Saindo...")
+                break
+
+            # ======== INVÁLIDO ========
             else:
                 logging.info("Comando inválido")
-                
+
     finally:
-        try: server_sock.close()
-        except: pass
+        try:
+            server_sock.close()
+        except:
+            pass
+
 
 if __name__ == '__main__':
     main()
-    
+
 
 
     #Falta por módulo de "Contatos", ou seja, lista pessoas que você salvou a chave pública, porta e UDP para que não precise do servidor para iniciar batalha

@@ -124,6 +124,13 @@ def handle_client(conn: socket.socket, addr):
                     ranking_list = sorted(all_stats.items(), key=lambda item: item[1].get('wins', 0), reverse=True)
                 formatted_ranking = [{"name": n, "wins": s["wins"], "losses": s["losses"]} for n, s in ranking_list]
                 send({"type": "RANKING", "ranking": formatted_ranking})
+            elif cmd == "LIST":
+                with lock:
+                    player_list = [
+                        {"name": n, "ip": d["addr"][0], "udp_port": d["udp_port"], "p2p_port": d["p2p_port"]}
+                        for n, d in players.items()
+                    ]
+                send({"type": "LIST", "players": player_list})
 
             elif cmd in ("CHALLENGE", "MATCH_RANDOM", "GET_INFO"):
                 target = msg.get("target")
