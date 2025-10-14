@@ -514,14 +514,10 @@ if __name__ == "__main__":
 
     #Falta por módulo de "Contatos", ou seja, lista pessoas que você salvou a chave pública para que não precise do servidor para iniciar batalha
 
-    #Falta colocar um módulo de gerenciar escolha do pokemon
-
     #Falta chat
 
     #Ranking?
 
-    #Falta interface gráfica
-
-    #Falta colocar mais pokemon na base de dados
-
     #Falta colocar um hash cumulativo para o servidor validar se é uma vitória válida ou não. Ou mandar cada cliente assinar o movimento que fez com a chave privada e o servidor validar com a pública quando receber os logs
+
+    #Falta interface gráfica

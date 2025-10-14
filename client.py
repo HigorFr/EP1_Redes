@@ -237,76 +237,106 @@ class Network:
         return line.strip()
 
 
+# Em client.py, SUBSTITUA a sua classe ServerClient inteira por esta versão
+
 class ServerClient:
     def __init__(self, server_ip, server_port):
-        self.server_ip = server_ip 
+        self.server_ip = server_ip
         self.server_port = server_port
 
+    # === MUDANÇA CRÍTICA: send_json agora detecta erros e retorna True/False ===
     @staticmethod
     def send_json(sock, obj):
-        line = (json.dumps(obj) + "\n").encode()
-        sock.sendall(line)
+        """Envia um objeto JSON e retorna True em caso de sucesso, False se a conexão falhar."""
+        try:
+            line = (json.dumps(obj) + "\n").encode()
+            sock.sendall(line)
+            return True
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+            return False
 
+    # === MUDANÇA CRÍTICA: recv_json agora lida com erros de forma mais robusta ===
     @staticmethod
     def recv_json(sock):
+        """Recebe um objeto JSON e retorna None se a conexão falhar."""
         buf = b""
-        while True:
-            ch = sock.recv(1)
-            if not ch:
-                return None
-            if ch == b"\n":
-                break
-            buf += ch
+        sock.settimeout(5.0)  # Adiciona timeout para evitar bloqueio eterno
+        try:
+            while True:
+                ch = sock.recv(1)
+                if not ch:
+                    return None  # Conexão fechada
+                if ch == b"\n":
+                    break
+                buf += ch
+        except (ConnectionAbortedError, ConnectionResetError, OSError, socket.timeout):
+            return None
+        finally:
+            sock.settimeout(None)  # Remove o timeout
+
         try:
             return json.loads(buf.decode())
-        except Exception:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             return None
 
     def register(self, name, p2p_port, pk_b64, udp_port):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((self.server_ip, self.server_port))
-        # adiciona udp_port no registro
-        self.send_json(s, {
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((self.server_ip, self.server_port))
+        except (ConnectionRefusedError, socket.gaierror) as e:
+            logging.error(f"Não foi possível conectar ao servidor: {e}")
+            return None
+
+        if not self.send_json(s, {
             "cmd": "REGISTER",
             "name": name,
             "p2p_port": p2p_port,
             "udp_port": udp_port,
             "public_key": pk_b64
-        })
+        }):
+            logging.error("Falha ao enviar registro para o servidor.")
+            return None
+
         resp = self.recv_json(s)
         if not resp or resp.get("type") != "OK":
             logging.error("Falha ao registrar no servidor: %s", resp)
             s.close()
-            raise SystemExit(1)
+            return None
+
         logging.info("Registrado no servidor com sucesso")
         return s
-    
-
-
 
     def match(self, sock, target=None):
-        if target:
-            self.send_json(sock, {"cmd": "CHALLENGE", "target": target})
-        else:
-            self.send_json(sock, {"cmd": "MATCH_RANDOM"})
-        while True:
-            resp = self.recv_json(sock)
-            if not resp:
-                return None
-            if resp.get("type") == "MATCH":
-                return resp["opponent"]  # deve conter ip, p2p_port e udp_port
-            if resp.get("type") == "ERR":
-                logging.error("Erro do servidor: %s", resp)
-                return None
+        cmd = "CHALLENGE" if target else "MATCH_RANDOM"
+        if not self.send_json(sock, {"cmd": cmd, "target": target}):
+            return None
+
+        resp = self.recv_json(sock)
+        if not resp:
+            return None
+
+        if resp.get("type") == "MATCH":
+            return resp["opponent"]
+
+        if resp.get("type") == "ERR":
+            logging.error("Erro do servidor: %s", resp.get("msg"))
+            return None
+
+        return None
+
+    
+# Em client.py, SUBSTITUA a classe Battle inteira
 
 class Battle:
     class State:
-        def __init__(self, my_pokemon: Pokemon, opp_pokemon: Pokemon, my_turn: bool):
-            self.me = my_pokemon.name
-            self.opp = opp_pokemon.name
+        ### MUDANÇA: O construtor agora também armazena os nomes dos jogadores ###
+        def __init__(self, my_player_name: str, opp_player_name: str, my_pokemon: Pokemon, opp_pokemon: Pokemon, my_turn: bool):
+            self.my_player_name = my_player_name
+            self.opp_player_name = opp_player_name
+            self.me_pokemon_name = my_pokemon.name
+            self.opp_pokemon_name = opp_pokemon.name
             self.my_pokemon = my_pokemon
             self.opp_pokemon = opp_pokemon
-            # Usa o HP dos Pokémon escolhidos
             self.my_hp = my_pokemon.hp
             self.opp_hp = opp_pokemon.hp
             self.my_turn = my_turn
@@ -315,24 +345,23 @@ class Battle:
         def apply_move(self, move, by_me):
             dmg = MOVES.get(move, 10)
             with self.lock:
-                if by_me:
-                    self.opp_hp = max(0, self.opp_hp - dmg)
-                else:
-                    self.my_hp = max(0, self.my_hp - dmg)
+                if by_me: self.opp_hp = max(0, self.opp_hp - dmg)
+                else: self.my_hp = max(0, self.my_hp - dmg)
 
         def finished(self):
             return self.my_hp <= 0 or self.opp_hp <= 0
 
         def winner(self):
-            if self.my_hp <= 0 and self.opp_hp <= 0:
-                return "draw"
-            if self.my_hp <= 0:
-                return self.opp
-            if self.opp_hp <= 0:
-                return self.me
+            if self.my_hp <= 0 and self.opp_hp <= 0: return "draw"
+            # Retorna o NOME DO JOGADOR, não do Pokémon
+            if self.my_hp <= 0: return self.opp_player_name
+            if self.opp_hp <= 0: return self.my_player_name
             return None
 
-    def __init__(self, my_pokemon: Pokemon, p2p_port, opp_info, dial, network, crypto, server_sock, input_queue, pokedex):
+    ### MUDANÇA: O construtor agora aceita os nomes dos jogadores ###
+    def __init__(self, my_player_name: str, opp_player_name: str, my_pokemon: Pokemon, p2p_port, opp_info, dial, network, crypto, server_sock, input_queue, pokedex):
+        self.my_player_name = my_player_name
+        self.opp_player_name = opp_player_name
         self.my_pokemon = my_pokemon
         self.p2p_port = p2p_port
         self.opp_info = opp_info
@@ -344,16 +373,14 @@ class Battle:
         self.conn = None
         self.fileobj = None
         self.input_queue = input_queue
-        self.pokedex = pokedex # ### MUDANÇA: Armazena a pokedex ###
+        self.pokedex = pokedex
         self.state = None
 
     def prepare(self):
-        """Estabelece a conexão P2P e troca as informações dos Pokémon."""
         if self.dial:
             self.conn = self.network.p2p_connect(self.opp_info['ip'], int(self.opp_info['p2p_port']))
         else:
             self.conn = self.network.p2p_listen(self.p2p_port, backlog=1, timeout=10)
-        
         if not self.conn: return False
 
         self.fileobj = self.conn.makefile("rwb")
@@ -369,20 +396,18 @@ class Battle:
             return False
         
         opp_choice_msg = Crypto.decrypt_json(self.shared_key, opp_choice_line.decode())
-        
         if not opp_choice_msg or opp_choice_msg.get("type") != "POKEMON_CHOICE":
-            logging.error("Falha ao receber a escolha de Pokémon do oponente.")
-            return False
+            logging.error("Falha ao receber a escolha de Pokémon do oponente."); return False
 
         opp_pokemon_name = opp_choice_msg.get("name")
-        
-        ### MUDANÇA: Busca o Pokémon do oponente na POKEDEX em vez de criar um falso ###
         opp_pokemon = self.pokedex.get_pokemon(opp_pokemon_name)
         if not opp_pokemon:
-            logging.error(f"Oponente escolheu um Pokémon inválido: {opp_pokemon_name}")
-            return False
+            logging.error(f"Oponente escolheu um Pokémon inválido: {opp_pokemon_name}"); return False
             
-        self.state = Battle.State(my_pokemon=self.my_pokemon, opp_pokemon=opp_pokemon, my_turn=self.dial)
+        self.state = Battle.State(
+            my_player_name=self.my_player_name, opp_player_name=self.opp_player_name,
+            my_pokemon=self.my_pokemon, opp_pokemon=opp_pokemon, my_turn=self.dial
+        )
         logging.debug("Shared key e troca de Pokémon feitos com sucesso")
         return True
 
@@ -394,62 +419,67 @@ class Battle:
     def recv_encrypted(self):
         assert self.shared_key is not None
         line = Network.recv_line(self.fileobj)
-        if line is None:
-            return None
+        if line is None: return None
         return Crypto.decrypt_json(self.shared_key, line.decode())
 
     def loop(self):
-        logging.info(f"=== BATALHA: {self.state.me} vs {self.state.opp} ===")
-        logging.info("Movimentos disponíveis: %s", ", ".join(MOVES.keys()))
+        if not self.state:
+            logging.error("Estado da batalha não foi inicializado."); return
 
-        drenar_fila(self.input_queue) #apaga tudo se tiver algo
-
-        while not self.state.finished():
-            try:                
+        logging.info(f"=== BATALHA: {self.state.my_pokemon.name} vs {self.state.opp_pokemon.name} ===")
+        logging.info("Movimentos disponíveis: %s", ", ".join(self.my_pokemon.moves))
+        drenar_fila(self.input_queue)
+        try:
+            while not self.state.finished():
                 if self.state.my_turn:
-
-                    raw = self.input_queue.get()   #ler o movimento da fila de entradas
+                    print("Seu turno! Seus movimentos:", ", ".join(self.my_pokemon.moves))
+                    raw = self.input_queue.get(timeout=60)
                     move = raw.strip()
-
-
-                    if move not in MOVES:
-                        logging.info("Movimento inválido")
-                        continue
+                    if move not in self.my_pokemon.moves:
+                        logging.info("Movimento inválido"); continue
                     self.send_encrypted({"type": "MOVE", "name": move})
                     self.state.apply_move(move, True)
                     logging.info(f"Você usou {move}. HP oponente: {self.state.opp_hp}")
-
                     self.state.my_turn = False
                 else:
-                    self.conn.settimeout(60.0)
+                    self.conn.settimeout(70.0)
                     logging.info("Aguardando movimento do oponente...")
                     msg = self.recv_encrypted()
                     if msg is None:
-                        logging.warning("Conexão P2P encerrada")
-                        break
+                        logging.warning("Conexão P2P encerrada pelo oponente."); break
                     if msg.get('type') == 'MOVE':
                         mv = msg.get('name')
                         self.state.apply_move(mv, False)
                         logging.info(f"Oponente usou {mv}. Seu HP: {self.state.my_hp}")
                         self.state.my_turn = True
-            except:
-                print("Timeout, saindo da batalha...")
-                break
-            finally:
-                try:
-                    self.conn.close()
-                except Exception:
-                    pass
+        except queue.Empty:
+            print("Tempo de turno esgotado, saindo da batalha...")
+        except Exception as e:
+            logging.exception("Erro durante a batalha: %s", e)
+        finally:
+            try: self.conn.close()
+            except: pass
 
         winner = self.state.winner()
         logging.info(f"Resultado da batalha: {winner}")
-        ServerClient.send_json(self.server_sock, {"cmd": "RESULT", "me": self.state.me, "opponent": self.state.opp, "winner": winner})
-        resp = ServerClient.recv_json(self.server_sock,)
-        print(resp)
+        
+        ### MUDANÇA CRÍTICA: Apenas o vencedor envia o resultado ###
+        if winner == self.state.my_player_name:
+            logging.info("Eu sou o vencedor. Reportando o resultado ao servidor.")
+            ServerClient.send_json(self.server_sock, {
+                "cmd": "RESULT", 
+                "me": self.state.my_player_name, 
+                "opponent": self.state.opp_player_name, 
+                "winner": winner
+            })
+            ServerClient.recv_json(self.server_sock) # Espera a confirmação do servidor
+        else:
+            logging.info("Eu não sou o vencedor. Não irei reportar o resultado.")
 
+
+# Em client.py, SUBSTITUA a classe QueueManager
 
 class QueueManager:
-    # ### MUDANÇA: O construtor agora aceita 'pokedex' ###
     def __init__(self, my_name, p2p_port, network, crypto, server_sock, udp_port, input_queue, pokedex):
         self.my_name = my_name
         self.p2p_port = p2p_port
@@ -461,7 +491,7 @@ class QueueManager:
         self.recebidos = {}
         self.battle_started = threading.Event()
         self.input_queue = input_queue
-        self.pokedex = pokedex # ### MUDANÇA: Armazena a pokedex ###
+        self.pokedex = pokedex
 
     def get_battle_started(self):
         return self.battle_started.is_set()
@@ -475,7 +505,6 @@ class QueueManager:
 
     def _process_send(self, opp, q, my_pokemon):
         if self.battle_started.is_set(): return
-        
         op_name = opp['name']
         dest_udp_port = opp.get('udp_port', self.udp_port)
         msg = { "type": "DES", "opponent": { "name": self.my_name, "ip": None, "udp_port": self.udp_port, "p2p_port": self.p2p_port, "public_key": self.crypto.public_key_b64() } }
@@ -485,22 +514,18 @@ class QueueManager:
         except Exception as e:
             logging.error("Falha ao enviar desafio: %s", e)
             return
-
         try:
             resposta = q.get(timeout=20)
         except queue.Empty:
-            logging.info("Timeout aguardando resposta de %s", op_name)
-            return
-        
+            logging.info("Timeout aguardando resposta de %s", op_name); return
         if self.battle_started.is_set(): return
             
         if resposta and resposta.get('res') == 'ACE':
             logging.info("%s aceitou. Iniciando batalha (sou quem liga).", op_name)
             self.battle_started.set()
-            # ### MUDANÇA: Passa a pokedex para a classe Battle ###
-            b = Battle(my_pokemon, self.p2p_port, opp, dial=True, network=self.network, crypto=self.crypto, server_sock=self.server_sock, input_queue=self.input_queue, pokedex=self.pokedex)
-            if b.prepare():
-                b.loop()
+            ### MUDANÇA: Passa os nomes dos jogadores para a classe Battle ###
+            b = Battle(self.my_name, op_name, my_pokemon, self.p2p_port, opp, dial=True, network=self.network, crypto=self.crypto, server_sock=self.server_sock, input_queue=self.input_queue, pokedex=self.pokedex)
+            if b.prepare(): b.loop()
             self.battle_started.clear()
         else:
             logging.info("%s recusou o desafio.", op_name)
@@ -512,25 +537,19 @@ class QueueManager:
 
     def accept(self, opp_name, my_pokemon):
         if opp_name not in self.recebidos:
-            logging.info("Nenhum desafio de %s", opp_name)
-            return
-        
+            logging.info("Nenhum desafio de %s", opp_name); return
         opp = self.recebidos.pop(opp_name)
-
         if time.time() - opp["hora"] > 20:
-            logging.info("Desafio de %s expirou", opp_name)
-            return
+            logging.info("Desafio de %s expirou", opp_name); return
             
         res = {"type": "RES", "opp": self.my_name, "res": "ACE"}
         self.network.udp_send(res, ip=opp.get('ip', '255.255.255.255'), port=opp.get('udp_port', self.udp_port))
-        
         logging.info("Aceitei desafio de %s", opp_name)
         self.battle_started.set()
-        # ### MUDANÇA: Passa a pokedex para a classe Battle ###
-        b = Battle(my_pokemon, self.p2p_port, opp, dial=False, network=self.network, crypto=self.crypto, server_sock=self.server_sock, input_queue=self.input_queue, pokedex=self.pokedex)
+        ### MUDANÇA: Passa os nomes dos jogadores para a classe Battle ###
+        b = Battle(self.my_name, opp_name, my_pokemon, self.p2p_port, opp, dial=False, network=self.network, crypto=self.crypto, server_sock=self.server_sock, input_queue=self.input_queue, pokedex=self.pokedex)
         try:
-            if b.prepare():
-                b.loop()
+            if b.prepare(): b.loop()
         except Exception as e:
             logging.error("Erro ao preparar batalha: %s", e)
         finally:
@@ -538,8 +557,7 @@ class QueueManager:
 
     def reject(self, opp_name):
         if opp_name not in self.recebidos:
-            logging.info("Nenhum desafio de %s", opp_name)
-            return
+            logging.info("Nenhum desafio de %s", opp_name); return
         opp = self.recebidos.pop(opp_name)
         res = {"type": "RES", "opp": self.my_name, "res": "NEG"}
         self.network.udp_send(res, ip=opp.get('ip', '255.255.255.255'), port=opp.get('udp_port', self.udp_port))
@@ -569,20 +587,27 @@ def drenar_fila(q):
     except queue.Empty:
         return
 
-
-
-
-
-# Em client.py, SUBSTITUA a função main
-
-# Em client.py, SUBSTITUA a função main
+def send_keepalive(sock):
+    """
+    Roda em uma thread separada para enviar mensagens periódicas ao servidor
+    e manter a conexão viva.
+    """
+    while True:
+        try:
+            time.sleep(20) # Envia a cada 20 segundos
+            if not ServerClient.send_json(sock, {"cmd": "KEEPALIVE"}):
+                logging.error("Falha ao enviar keepalive. Conexão perdida.")
+                break
+        except Exception:
+            logging.error("Conexão com o servidor perdida. Encerrando thread de keepalive.")
+            break # Encerra a thread se a conexão morrer
 
 def main():
     print("Uso fácil: python client.py <meu_nome> <ip_server> <porta_server> <minha_porta_udp> <minha_porta_p2p>")
     my_name = sys.argv[1] if len(sys.argv) > 1 else input("Seu nome: ").strip()
     server_ip = sys.argv[2] if len(sys.argv) > 2 else input_default("IP do servidor (Vazio para 127.0.0.1)", "127.0.0.1")
     server_port = int(sys.argv[3]) if len(sys.argv) > 3 else int(input_default("Porta do servidor (Vazio para 5000)", "5000"))
-    udp_port = int(sys.argv[4]) if len(sys.argv) > 4 else int(input_default("Porta UDP broadcast (Vazio para 5001)", "5001"))
+    udp_port = int(sys.argv[4]) if len(sys.argv) > 4 else int(input_default("Porta UDP (Vazio para 5001)", "5001"))
     p2p_port = int(sys.argv[5]) if len(sys.argv) > 5 else int(input_default("Porta P2P (Vazio para 7000)", "7000"))
 
     pokedex = PokemonDB()
@@ -601,6 +626,8 @@ def main():
             t = msg.get('type')
             if t == 'DES':
                 opp = msg.get('opponent')
+                if opp['name'] == my_name:
+                    return  # Ignora desafios para si mesmo
                 opp['ip'] = addr[0]
                 queue_mgr.receive_challenge(opp)
             elif t == 'RES':
@@ -615,14 +642,20 @@ def main():
     server_sock = server.register(my_name, p2p_port, crypto.public_key_b64(), udp_port)
     queue_mgr = QueueManager(my_name, p2p_port, network, crypto, server_sock, udp_port, input_queue, pokedex)
     network.start_udp_listener(udp_handler)
-    
+    threading.Thread(target=send_keepalive, args=(server_sock,), daemon=True).start()
+
     try:
+        # Loop principal com comandos atualizados: list, stats, ranking, etc.
         while True:
             if queue_mgr.get_battle_started():
                 time.sleep(0.2)
                 continue
-            
-            print("\nDigite comando (list, desafiar <nome>, aleatorio, aceitar <nome>, negar <nome>, sair): ", end="", flush=True)
+
+            print(
+                "\nDigite comando (list, stats, ranking, desafiar <nome>, aleatorio, aceitar <nome>, negar <nome>, sair): ",
+                end="",
+                flush=True
+            )
 
             try:
                 raw = input_queue.get()
@@ -634,67 +667,108 @@ def main():
                 continue
 
             cmd = raw.strip()
-            if not cmd: continue
+            if not cmd:
+                continue
 
             parts = cmd.split()
             command = parts[0].lower()
             args = parts[1:]
 
+            # ======== LIST ========
             if command == 'list':
-                ServerClient.send_json(server_sock, {"cmd": "LIST"})
-                resp = ServerClient.recv_json(server_sock)
-                if resp: print("\nJogadores online:", resp.get("players", []))
+                if not ServerClient.send_json(server_sock, {"cmd": "LIST"}):
+                    logging.error("Falha ao enviar comando LIST para o servidor")
+                    continue
 
+                resp = ServerClient.recv_json(server_sock)
+                if resp and resp.get("type") == "LIST":
+                    players = resp.get("players", [])
+                    if players:
+                        print("\n--- Jogadores Online ---")
+                        for player in players:
+                            print(f"  {player}")
+                        print("-------------------------")
+                    else:
+                        print("\nNão há jogadores online no momento.")
+                else:
+                    logging.error("Resposta inválida do servidor para LIST: %s", resp)
+
+            # ======== STATS ========
+            elif command == 'stats':
+                ServerClient.send_json(server_sock, {"cmd": "GET_STATS"})
+                resp = ServerClient.recv_json(server_sock)
+                if resp and resp.get("type") == "STATS":
+                    print(f"\n--- Suas Estatísticas ---")
+                    print(f"  Vitórias: {resp.get('wins', 0)}")
+                    print(f"  Derrotas: {resp.get('losses', 0)}")
+                    print(f"-------------------------")
+                else:
+                    print("Erro ao obter estatísticas:", resp)
+
+            # ======== RANKING ========
+            elif command == 'ranking':
+                ServerClient.send_json(server_sock, {"cmd": "RANKING"})
+                resp = ServerClient.recv_json(server_sock)
+                if resp and resp.get("type") == "RANKING":
+                    print("\n--- Ranking de Jogadores (por Vitórias) ---")
+                    for i, player in enumerate(resp.get("ranking", []), 1):
+                        print(f"  {i}. {player['name']} - Vitórias: {player['wins']}, Derrotas: {player['losses']}")
+                    print(f"-------------------------------------------")
+                else:
+                    print("Erro ao obter ranking:", resp)
+
+            # ======== DESAFIAR / ALEATORIO / ACEITAR ========
             elif command in ['desafiar', 'aleatorio', 'aceitar']:
                 opp_info = None
-                
-                if command == 'desafiar' or command == 'aceitar':
+                if command in ['desafiar', 'aceitar']:
                     if not args:
-                        logging.warning(f"Uso: {command} <nome_do_oponente>")
+                        logging.warning(f"Uso: {command} <nome>")
                         continue
                     target = args[0]
                     if target == my_name:
                         logging.warning("Você não pode se desafiar.")
                         continue
                     opp_info = server.match(server_sock, target=target)
-                
                 elif command == 'aleatorio':
                     opp_info = server.match(server_sock)
 
                 if opp_info:
-                    # ### MUDANÇA: Passa a input_queue para a função ###
                     my_pokemon = choose_pokemon(pokedex, input_queue)
-                    
-                    # Se o jogador não escolheu um pokemon (timeout), não faz nada
                     if not my_pokemon:
                         continue
-                        
                     if command == 'aceitar':
                         queue_mgr.accept(opp_info['name'], my_pokemon)
-                    else: # Desafiar ou Aleatório
+                    else:
                         queue_mgr.add_send(opp_info, my_pokemon)
                 else:
                     logging.warning("Não foi possível encontrar um oponente.")
 
+            # ======== NEGAR ========
             elif command == 'negar':
-                if not args: logging.warning("Uso: negar <nome>"); continue
+                if not args:
+                    logging.warning("Uso: negar <nome>")
+                    continue
                 queue_mgr.reject(args[0])
-            
+
+            # ======== SAIR ========
             elif command == 'sair':
-                logging.info("Saindo..."); break
+                logging.info("Saindo...")
+                break
+
+            # ======== INVÁLIDO ========
             else:
                 logging.info("Comando inválido")
-                
+
     finally:
         try:
             server_sock.close()
-        except Exception:
+        except:
             pass
+
 
 if __name__ == '__main__':
     main()
 
-    
 
 
     #Falta por módulo de "Contatos", ou seja, lista pessoas que você salvou a chave pública, porta e UDP para que não precise do servidor para iniciar batalha
