@@ -603,23 +603,6 @@ def send_keepalive(sock):
             break # Encerra a thread se a conexão morrer
 
 def main():
-    print("Uso fácil: python client.py <meu_nome> <ip_server> <porta_server> <minha_porta_udp> <minha_porta_p2p>")
-    my_name = sys.argv[1] if len(sys.argv) > 1 else input("Seu nome: ").strip()
-    server_ip = sys.argv[2] if len(sys.argv) > 2 else input_default("IP do servidor (Vazio para 127.0.0.1)", "127.0.0.1")
-    server_port = int(sys.argv[3]) if len(sys.argv) > 3 else int(input_default("Porta do servidor (Vazio para 5000)", "5000"))
-    udp_port = int(sys.argv[4]) if len(sys.argv) > 4 else int(input_default("Porta UDP (Vazio para 5001)", "5001"))
-    p2p_port = int(sys.argv[5]) if len(sys.argv) > 5 else int(input_default("Porta P2P (Vazio para 7000)", "7000"))
-
-    pokedex = PokemonDB()
-    pokedex.load()
-
-    input_queue = queue.Queue()
-    input_reader = Leitor(input_queue)
-    input_reader.start()
-
-    network = Network(udp_broadcast_port=udp_port)
-    crypto = Crypto()
-    server = ServerClient(server_ip, server_port)
 
     def udp_handler(msg, addr):
         try:
@@ -639,7 +622,33 @@ def main():
         except Exception:
             logging.exception("Erro tratando mensagem UDP")
 
-    server_sock = server.register(my_name, p2p_port, crypto.public_key_b64(), udp_port)
+
+
+    print("Uso fácil: python client.py <meu_nome> <ip_server> <porta_server> <minha_porta_udp> <minha_porta_p2p>")
+    my_name = sys.argv[1] if len(sys.argv) > 1 else input("Seu nome: ").strip()
+    server_ip = sys.argv[2] if len(sys.argv) > 2 else input_default("IP do servidor (Vazio para 127.0.0.1)", "127.0.0.1")
+    server_port = int(sys.argv[3]) if len(sys.argv) > 3 else int(input_default("Porta do servidor (Vazio para 5000)", "5000"))
+    udp_port = int(sys.argv[4]) if len(sys.argv) > 4 else int(input_default("Porta UDP (Vazio para 5001)", "5001"))
+    p2p_port = int(sys.argv[5]) if len(sys.argv) > 5 else int(input_default("Porta P2P (Vazio para 7000)", "7000"))
+
+    pokedex = PokemonDB()
+    pokedex.load()
+
+    input_queue = queue.Queue()
+    input_reader = Leitor(input_queue)
+    input_reader.start()
+
+    network = Network(udp_broadcast_port=udp_port)
+    crypto = Crypto()
+    server = ServerClient(server_ip, server_port)
+
+
+    try:
+        server_sock = server.register(my_name, p2p_port, crypto.public_key_b64(), udp_port)
+    except:
+        logging.exception("Tente colocar um servidor válido")
+        return
+
     queue_mgr = QueueManager(my_name, p2p_port, network, crypto, server_sock, udp_port, input_queue, pokedex)
     network.start_udp_listener(udp_handler)
     threading.Thread(target=send_keepalive, args=(server_sock,), daemon=True).start()
