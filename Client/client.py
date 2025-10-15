@@ -547,7 +547,7 @@ class QueueManager:
         logging.info("Aceitei desafio de %s", opp_name)
         self.battle_started.set()
         ### MUDANÇA: Passa os nomes dos jogadores para a classe Battle ###
-        b = Battle(self.my_name, opp_name, my_pokemon, self.p2p_port, opp, dial=False, network=self.network, crypto=self.crypto, server_sock=self.server_sock, input_queue=self.input_queue, pokedex=self.pokedex)
+        b = Battle(self.my_name,     opp_name, my_pokemon, self.p2p_port, opp, dial=False, network=self.network, crypto=self.crypto, server_sock=self.server_sock, input_queue=self.input_queue, pokedex=self.pokedex)
         try:
             if b.prepare(): b.loop()
         except Exception as e:
@@ -789,4 +789,4 @@ if __name__ == '__main__':
 
     #Falta interface gráfica
 
-    #Falta colocar um hash cumulativo para o servidor validar se é uma vitória válida ou não.
+    #Falta colocar um hash cumulativo para o servidor validar se é uma vitória válida ou n
