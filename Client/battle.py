@@ -1,10 +1,10 @@
 import logging
 import threading, queue
-from pokemon import Pokemon, MOVES
+from pokemon import Pokemon
 from crypto import Crypto
 from network import Network
 from comunicacaoServer import ServerClient
-from queueManager import drenar_fila
+from queueManager import QueueManager
 
 
 class Battle:
@@ -23,7 +23,11 @@ class Battle:
             self.lock = threading.Lock()
 
         def apply_move(self, move, by_me):
-            dmg = MOVES.get(move, 10)
+            
+            moves = Pokemon.getMoves(); 
+
+            dmg = moves.get(move, 10)
+
             with self.lock:
                 if by_me: self.opp_hp = max(0, self.opp_hp - dmg)
                 else: self.my_hp = max(0, self.my_hp - dmg)
@@ -108,7 +112,7 @@ class Battle:
 
         logging.info(f"=== BATALHA: {self.state.my_pokemon.name} vs {self.state.opp_pokemon.name} ===")
         logging.info("Movimentos disponíveis: %s", ", ".join(self.my_pokemon.moves))
-        drenar_fila(self.input_queue)
+        QueueManager.drenar_fila(self.input_queue)
         try:
             while not self.state.finished():
                 if self.state.my_turn:

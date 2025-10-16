@@ -30,6 +30,11 @@ class Pokemon:
     def __repr__(self):
         return f"<Pokemon: {self.name}, HP: {self.hp}>"
 
+    def getMoves(self):
+        return self.moves
+
+
+
 class PokemonDB:
     """Carrega e gerencia a base de dados de Pokémon a partir de um arquivo CSV."""
     def __init__(self, filename='pokemon.csv'):

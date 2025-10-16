@@ -1,3 +1,5 @@
+#Código Antigo, não usar
+
 import socket
 import threading
 import json

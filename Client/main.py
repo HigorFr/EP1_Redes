@@ -2,7 +2,7 @@ from crypto import Crypto
 from network import Network
 from comunicacaoServer import ServerClient
 from queueManager import QueueManager
-from leitor import Leitor, drenar_fila
+from leitor import Leitor
 from pokemon import PokemonDB, choose_pokemon
 import logging
 import threading, queue, time, sys
@@ -11,7 +11,6 @@ import threading, queue, time, sys
 def main():
 
     #Roda em uma thread separada para enviar mensagens periódicas ao servidor e manter a conexão viva.
-    
     def send_keepalive(sock):
         while True:
             try:
@@ -98,7 +97,7 @@ def main():
                 continue
 
             if queue_mgr.get_battle_started():
-                drenar_fila(input_queue)
+                QueueManager.drenar_fila(input_queue)
                 continue
 
             cmd = raw.strip()
