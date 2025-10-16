@@ -9,7 +9,6 @@ class Network:
         self.BUFFER_SIZE = 4096
 
     def start_udp_listener(self, handler):
-
         def _listen():
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -24,11 +23,14 @@ class Network:
                     try:
                         msg = json.loads(data.decode())
                         handler(msg, addr)
+
                     except json.JSONDecodeError:
                         logging.debug("Recebeu UDP inválido")
+
                 except Exception as e:
                     logging.exception("Erro no UDP listener: %s", e)
                     break
+
         t = threading.Thread(target=_listen, daemon=True)
         t.start()
 

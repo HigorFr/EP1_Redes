@@ -6,11 +6,11 @@ from leitor import Leitor
 from pokemon import PokemonDB
 import logging
 import threading, queue, time, sys
+from utils import Utils
 
+logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
-def main():
-
-  def choose_pokemon(pokedex: PokemonDB, input_queue: queue.Queue):
+def choose_pokemon(pokedex: PokemonDB, input_queue: queue.Queue):
     #Mostra a lista de Pokémon e gerencia a escolha do jogador a partir da fila de entrada.
     print("\n--- Escolha seu Pokémon para a batalha! ---")
     available_pokemons = pokedex.get_all_names()
@@ -44,24 +44,46 @@ def main():
 
 
 
-
-    #Roda em uma thread separada para enviar mensagens periódicas ao servidor e manter a conexão viva.
-    def send_keepalive(sock):
-        while True:
-            try:
-                time.sleep(20) # Envia a cada 20 segundos
-                if not ServerClient.send_json(sock, {"cmd": "KEEPALIVE"}):
-                    logging.error("Falha ao enviar keepalive. Conexão perdida.")
-                    break
-            except Exception:
-                logging.error("Conexão com o servidor perdida. Encerrando thread de keepalive.")
-                break # Encerra a thread se a conexão morrer
-
+#Roda em uma thread separada para enviar mensagens periódicas ao servidor e manter a conexão viva.
+def send_keepalive(sock):
+    while True:
+        try:
+            time.sleep(20) # Envia a cada 20 segundos
+            if not ServerClient.send_json(sock, {"cmd": "KEEPALIVE"}):
+                logging.error("Falha ao enviar keepalive. Conexão perdida.")
+                break
+        except Exception:
+            logging.error("Conexão com o servidor perdida. Encerrando thread de keepalive.")
+            break # Encerra a thread se a conexão morrer
 
 
-    def input_default(prompt, default):
-        s = input(f"{prompt}").strip()
-        return s if s else default
+
+def input_default(prompt, default):
+    s = input(f"{prompt}").strip()
+    return s if s else default
+
+
+
+def main():
+    
+    print("Uso fácil: python client.py <meu_nome> <ip_server> <porta_server> <minha_porta_udp> <minha_porta_p2p>")
+    my_name = sys.argv[1] if len(sys.argv) > 1 else input("Seu nome: ").strip()
+    server_ip = sys.argv[2] if len(sys.argv) > 2 else input_default("IP do servidor (Vazio para 127.0.0.1)", "127.0.0.1")
+    server_port = int(sys.argv[3]) if len(sys.argv) > 3 else int(input_default("Porta do servidor (Vazio para 5000)", "5000"))
+    udp_port = int(sys.argv[4]) if len(sys.argv) > 4 else int(input_default("Porta UDP (Vazio para 5001)", "5001"))
+    p2p_port = int(sys.argv[5]) if len(sys.argv) > 5 else int(input_default("Porta P2P (Vazio para 7000)", "7000"))
+
+    pokedex = PokemonDB()
+    pokedex.load()
+
+    input_queue = queue.Queue()
+    input_reader = Leitor(input_queue)
+    input_reader.start()
+
+    network = Network(udp_broadcast_port=udp_port)
+    crypto = Crypto()
+    server = ServerClient(server_ip, server_port)
+
 
 
     def udp_handler(msg, addr):
@@ -84,32 +106,18 @@ def main():
 
 
 
-    print("Uso fácil: python client.py <meu_nome> <ip_server> <porta_server> <minha_porta_udp> <minha_porta_p2p>")
-    my_name = sys.argv[1] if len(sys.argv) > 1 else input("Seu nome: ").strip()
-    server_ip = sys.argv[2] if len(sys.argv) > 2 else input_default("IP do servidor (Vazio para 127.0.0.1)", "127.0.0.1")
-    server_port = int(sys.argv[3]) if len(sys.argv) > 3 else int(input_default("Porta do servidor (Vazio para 5000)", "5000"))
-    udp_port = int(sys.argv[4]) if len(sys.argv) > 4 else int(input_default("Porta UDP (Vazio para 5001)", "5001"))
-    p2p_port = int(sys.argv[5]) if len(sys.argv) > 5 else int(input_default("Porta P2P (Vazio para 7000)", "7000"))
-
-    pokedex = PokemonDB()
-    pokedex.load()
-
-    input_queue = queue.Queue()
-    input_reader = Leitor(input_queue)
-    input_reader.start()
-
-    network = Network(udp_broadcast_port=udp_port)
-    crypto = Crypto()
-    server = ServerClient(server_ip, server_port)
-
 
     try:
         server_sock = server.register(my_name, p2p_port, crypto.public_key_b64(), udp_port)
-    except:
-        logging.exception("Tente colocar um servidor válido")
+    except Exception as e:
+
+
+        logging.info("Tente colocar um servidor válido")
+        #logging.exception("Tente colocar um servidor válido")
         return
 
     queue_mgr = QueueManager(my_name, p2p_port, network, crypto, server_sock, udp_port, input_queue, pokedex)
+    
     network.start_udp_listener(udp_handler)
     threading.Thread(target=send_keepalive, args=(server_sock,), daemon=True).start()
 
@@ -132,7 +140,7 @@ def main():
                 continue
 
             if queue_mgr.get_battle_started():
-                QueueManager.drenar_fila(input_queue)
+                Utils.drenar_fila(input_queue)
                 continue
 
             cmd = raw.strip()
@@ -194,20 +202,25 @@ def main():
                         logging.warning(f"Uso: {command} <nome>")
                         continue
                     target = args[0]
+
                     if target == my_name:
                         logging.warning("Você não pode se desafiar.")
                         continue
                     opp_info = server.match(server_sock, target=target)
+
                 elif command == 'aleatorio':
                     opp_info = server.match(server_sock)
 
+
                 if opp_info:
                     my_pokemon = choose_pokemon(pokedex, input_queue)
+
                     if not my_pokemon:
                         continue
                     if command == 'aceitar':
                         queue_mgr.accept(opp_info['name'], my_pokemon)
                     else:
+                        logging.warning("Enviado desafio")
                         queue_mgr.add_send(opp_info, my_pokemon)
                 else:
                     logging.warning("Não foi possível encontrar um oponente.")

@@ -2,7 +2,7 @@ import logging
 import threading, queue
 
 from utils import Utils
-from pokemon import Pokemon
+from pokemon import Pokemon, PokemonDB
 from crypto import Crypto
 from network import Network
 from comunicacaoServer import ServerClient
@@ -26,14 +26,15 @@ class Battle:
             self.lock = threading.Lock()
 
         def apply_move(self, move, by_me):
-            
-            moves = Pokemon.getMoves(); 
 
-            dmg = moves.get(move, 10)
+                
+            dmg = move.getDmg()
 
             with self.lock:
-                if by_me: self.opp_hp = max(0, self.opp_hp - dmg)
-                else: self.my_hp = max(0, self.my_hp - dmg)
+                if by_me: 
+                    self.opp_hp = max(0, self.opp_hp - dmg)
+                else: 
+                    self.my_hp = max(0, self.my_hp - dmg)
 
         def finished(self):
             return self.my_hp <= 0 or self.opp_hp <= 0
@@ -64,6 +65,7 @@ class Battle:
         self.pokedex = pokedex
         self.state = None
 
+      
     def prepare(self):
         if self.dial:
             self.conn = self.network.p2p_connect(self.opp_info['ip'], int(self.opp_info['p2p_port']))
@@ -115,7 +117,7 @@ class Battle:
             logging.error("Estado da batalha não foi inicializado."); return
 
         logging.info(f"=== BATALHA: {self.state.my_pokemon.name} vs {self.state.opp_pokemon.name} ===")
-        logging.info("Movimentos disponíveis: %s", ", ".join(self.my_pokemon.moves))
+        logging.info("Movimentos disponíveis: %s", ", ".join(self.my_pokemon.moves_str))
         
         
         Utils.drenar_fila(self.input_queue)
@@ -124,15 +126,25 @@ class Battle:
         try:
             while not self.state.finished():
                 if self.state.my_turn:
-                    print("Seu turno! Seus movimentos:", ", ".join(self.my_pokemon.moves))
+                    print("Seu turno! Seus movimentos:", ", ".join(self.my_pokemon.moves_str))
                     raw = self.input_queue.get(timeout=60)
-                    move = raw.strip()
-                    if move not in self.my_pokemon.moves:
+                    move = raw.strip().lower()
+                
+                    
+                    if move not in self.my_pokemon.moves_str:
                         logging.info("Movimento inválido"); continue
+                
+                
                     self.send_encrypted({"type": "MOVE", "name": move})
-                    self.state.apply_move(move, True)
+                
+                    move_obj = self.pokedex.get_move_by_name(move)      
+                    self.state.apply_move(move_obj, True)
+                
                     logging.info(f"Você usou {move}. HP oponente: {self.state.opp_hp}")
                     self.state.my_turn = False
+                
+                
+                
                 else:
                     self.conn.settimeout(70.0)
                     logging.info("Aguardando movimento do oponente...")
@@ -140,10 +152,17 @@ class Battle:
                     if msg is None:
                         logging.warning("Conexão P2P encerrada pelo oponente."); break
                     if msg.get('type') == 'MOVE':
+                        
                         mv = msg.get('name')
-                        self.state.apply_move(mv, False)
+                        move_obj = self.pokedex.get_move_by_name(mv)    
+                        self.state.apply_move(move_obj, False)
+                        
                         logging.info(f"Oponente usou {mv}. Seu HP: {self.state.my_hp}")
                         self.state.my_turn = True
+
+
+
+
         except queue.Empty:
             print("Tempo de turno esgotado, saindo da batalha...")
         except Exception as e:

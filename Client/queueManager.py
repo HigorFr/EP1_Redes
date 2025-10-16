@@ -31,16 +31,29 @@ class QueueManager:
         q = queue.Queue()
         self.enviados[desafio_id] = q
         t = threading.Thread(target=self._process_send, args=(opp, q, my_pokemon), daemon=True)
+        
+        #APGAR
+        logging.warning("Desafio Enviado")
         t.start()
 
     def _process_send(self, opp, q, my_pokemon):
+        
+    
+        logging.warning("Desafio RECEB")
         if self.battle_started.is_set(): return
+
+       
+
         op_name = opp['name']
         dest_udp_port = opp.get('udp_port', self.udp_port)
         msg = { "type": "DES", "opponent": { "name": self.my_name, "ip": None, "udp_port": self.udp_port, "p2p_port": self.p2p_port, "public_key": self.crypto.public_key_b64() } }
+        
         try:
             self.network.udp_send(msg, ip=opp.get('ip', '255.255.255.255'), port=dest_udp_port)
             logging.info("Desafio enviado para %s", op_name)
+
+
+
         except Exception as e:
             logging.error("Falha ao enviar desafio: %s", e)
             return

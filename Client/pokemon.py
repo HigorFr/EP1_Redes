@@ -1,31 +1,32 @@
 import logging
 import csv
+import ast
+import random
+from move import Move
+from utils import Utils
+
 
 
 class Pokemon:
    
+
+ 
+
    
     """Guarda os atributos de um único Pokémon."""
-    def __init__(self, name, hp, attack, defense, speed, type1, type2):
+    def __init__(self, name, hp, attack, defense, speed, type1, type2, moves ):
         self.name = name
-        self.hp = int(hp)
-        self.attack = int(attack)
-        self.defense = int(defense)
-        self.speed = int(speed)
+        self.hp = Utils.safe_int(hp)
+        self.attack = Utils.safe_int(attack)
+        self.defense = Utils.safe_int(defense)
+        self.speed = Utils.safe_int(speed)
         self.type1 = type1
         self.type2 = type2
-        # Por enquanto, vamos assumir que todos podem usar os mesmos movimentos
-
-        MOVES = {
-                "Tackle": 15,
-                "Thunderbolt": 25,
-                "QuickAttack": 12,
-                "Flamethrower": 25,
-                "HK": 100
-            }
+        self.moves = moves
+        self.moves_str = [move.name for move in moves]
 
 
-        self.moves = list(MOVES.keys())
+        
 
     def __repr__(self):
         return f"<Pokemon: {self.name}, HP: {self.hp}>"
@@ -37,45 +38,102 @@ class Pokemon:
 
 class PokemonDB:
     """Carrega e gerencia a base de dados de Pokémon a partir de um arquivo CSV."""
-    def __init__(self, filename='pokemon.csv'):
-        self.filename = filename
+    def __init__(self, path='Client/'):
+        self.path = path
         self.pokemons = {} # Dicionário para guardar os pokémons por nome
+        self.moves = {}
 
     def load(self):
         """Lê o arquivo CSV e popula o dicionário de Pokémons."""
         try:
-            with open(self.filename, mode='r', encoding='utf-8-sig') as infile:
-                reader = csv.DictReader(infile)
+
+
+            with open(self.path+"move-data.csv", newline='', encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+
                 for row in reader:
-                    ### MUDANÇA DEFINITIVA: Limpa as chaves (minúsculas E sem espaços) ###
+                    # Normaliza as chaves (caso tenha espaço ou variação)
                     row_clean = {key.lower().replace(' ', ''): value for key, value in row.items()}
 
-                    # Agora, usamos o dicionário com as chaves limpas
+
+                    if(row_clean['category'].lower() == "status"): continue
+
+                    move = Move(
+                        name=row_clean['name'].lower(),
+                        move_type=row_clean['type'],
+                        category=row_clean['category'],
+                        contest=row_clean['contest'],
+                        pp=row_clean['pp'],
+                        power=row_clean['power'],
+                        accuracy=row_clean['accuracy'],
+                        generation=row_clean['generation']
+                    )
+
+                    self.moves[move.name.lower()] = move
+
+
+            with open(self.path+"pokemon-data.csv", mode='r', encoding='utf-8-sig') as infile:
+                reader = csv.DictReader(infile, delimiter=';')
+                for row in reader:
+                    ### MUDANÇA DEFINITIVA: Limpa as chaves (minúsculas E sem espaços) ###
+                    
+                    row_clean = {key.lower().replace(' ', ''): value for key, value in row.items() if key is not None}
+
+
+                    types = ast.literal_eval(row_clean.get('types', '[]'))
+                    moves_list = ast.literal_eval(row_clean.get('moves', '[]'))
+
+   
+                    type1 = types[0]
+                    type2 = types[1] if len(types) > 1 else None
+
+
+                    valid_moves = [m for m in moves_list if m.lower() in self.moves]
+                    chosen_move_names = random.sample(valid_moves, min(4, len(valid_moves)))
+                    objetos_moves = [self.moves[m.lower()] for m in chosen_move_names]
+
+
                     p = Pokemon(
                         name=row_clean['name'],
                         hp=row_clean['hp'],
                         attack=row_clean['attack'],
                         defense=row_clean['defense'],
                         speed=row_clean['speed'],
-                        type1=row_clean['type1'],
-                        type2=row_clean['type2']
+                        type1=type1,
+                        type2=type2,
+                        moves=objetos_moves
                     )
+
                     self.pokemons[p.name.lower()] = p
+
+
+
+
+
+
             logging.info(f"{len(self.pokemons)} Pokémon carregados da base de dados.")
+       
         except FileNotFoundError:
-            logging.error(f"Erro: Arquivo da base de dados '{self.filename}' não encontrado.")
+            logging.error(f"Erro: Arquivo da base de dados '{self.path}' não encontrado.")
             raise SystemExit(1)
         except KeyError as e:
             logging.error(f"Erro ao carregar base de dados: a coluna {e} não foi encontrada no arquivo pokemon.csv.")
             logging.error("Verifique se todos os cabeçalhos (Name, HP, Attack, Defense, Speed, Type 1, Type 2) existem no seu CSV.")
             raise SystemExit(1)
-        except Exception as e:
-            logging.error(f"Erro ao carregar a base de dados de Pokémon: {e}")
-            raise SystemExit(1)
+        
+        
+        #except Exception as e:
+        #    logging.error(f"Erro ao carregar a base de dados de Pokémon: {e}")
+        #    raise SystemExit(1)
 
     def get_pokemon(self, name):
         """Busca um Pokémon pelo nome (insensível a maiúsculas/minúsculas)."""
         return self.pokemons.get(name.lower())
+
+
+    def get_move_by_name(self, move_name):
+        return self.moves.get(move_name)
+
 
     def get_all_names(self):
         """Retorna uma lista com os nomes de todos os Pokémon disponíveis."""

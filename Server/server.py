@@ -189,6 +189,8 @@ def handle_client(conn: socket.socket, addr):
                 send({"type":"OK","msg":"result_recorded"})
             else:
                 send({"type":"ERR","msg":"unknown_cmd"})
+
+
     except Exception:
         pass
     finally:
@@ -200,6 +202,8 @@ def handle_client(conn: socket.socket, addr):
             udp_broadcast({"type":"EVENT","sub":"LEAVE","name":name, "reason": "disconnect"})
         try: conn.close()
         except: pass
+
+
 
 def tcp_server():
     reaper_thread = threading.Thread(target=check_inactive_clients, daemon=True)
@@ -213,6 +217,10 @@ def tcp_server():
         while True:
             conn, addr = s.accept()
             threading.Thread(target=handle_client, args=(conn, addr), daemon=True).start()
+
+
+
+
 
 if __name__ == "__main__":
     tcp_server()
