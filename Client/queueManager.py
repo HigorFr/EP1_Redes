@@ -2,8 +2,9 @@
 import logging
 import threading
 import queue
-from battle import Battle
 import time
+from battle import Battle
+
 
 
 class QueueManager:
@@ -20,14 +21,6 @@ class QueueManager:
         self.input_queue = input_queue
         self.pokedex = pokedex
 
-
-
-    def drenar_fila(q):
-        try:
-            while True:
-                q.get_nowait()
-        except queue.Empty:
-            return
 
 
     def get_battle_started(self):

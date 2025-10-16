@@ -1,13 +1,16 @@
 import logging
 import threading, queue
+
+from utils import Utils
 from pokemon import Pokemon
 from crypto import Crypto
 from network import Network
 from comunicacaoServer import ServerClient
-from queueManager import QueueManager
+
 
 
 class Battle:
+    
     class State:
         ### MUDANÇA: O construtor agora também armazena os nomes dos jogadores ###
         def __init__(self, my_player_name: str, opp_player_name: str, my_pokemon: Pokemon, opp_pokemon: Pokemon, my_turn: bool):
@@ -53,6 +56,7 @@ class Battle:
         self.network = network
         self.crypto = crypto
         self.server_sock = server_sock
+    
         self.shared_key = None
         self.conn = None
         self.fileobj = None
@@ -112,7 +116,11 @@ class Battle:
 
         logging.info(f"=== BATALHA: {self.state.my_pokemon.name} vs {self.state.opp_pokemon.name} ===")
         logging.info("Movimentos disponíveis: %s", ", ".join(self.my_pokemon.moves))
-        QueueManager.drenar_fila(self.input_queue)
+        
+        
+        Utils.drenar_fila(self.input_queue)
+        
+        
         try:
             while not self.state.finished():
                 if self.state.my_turn:

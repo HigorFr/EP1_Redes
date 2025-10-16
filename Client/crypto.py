@@ -6,6 +6,7 @@ import os
 import json
 import logging
 
+
 class Crypto:
     def __init__(self):
         self._sk = x25519.X25519PrivateKey.generate()

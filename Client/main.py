@@ -3,12 +3,47 @@ from network import Network
 from comunicacaoServer import ServerClient
 from queueManager import QueueManager
 from leitor import Leitor
-from pokemon import PokemonDB, choose_pokemon
+from pokemon import PokemonDB
 import logging
 import threading, queue, time, sys
 
 
 def main():
+
+  def choose_pokemon(pokedex: PokemonDB, input_queue: queue.Queue):
+    #Mostra a lista de Pokémon e gerencia a escolha do jogador a partir da fila de entrada.
+    print("\n--- Escolha seu Pokémon para a batalha! ---")
+    available_pokemons = pokedex.get_all_names()
+    
+    for i, name in enumerate(available_pokemons, 1):
+        print(f"  {i}. {name}")
+    print("Digite o número do Pokémon escolhido: ", end="", flush=True)
+
+    while True:
+        try:
+            # ### MUDANÇA: Pega a entrada da FILA, não mais do input() ###
+            # Espera até 60 segundos pela escolha do jogador.
+            choice = input_queue.get(timeout=60)
+            
+            if not choice: continue
+            
+            choice_idx = int(choice) - 1
+            
+            if 0 <= choice_idx < len(available_pokemons):
+                chosen_name = available_pokemons[choice_idx]
+                chosen_pokemon = pokedex.get_pokemon(chosen_name)
+                print(f"Você escolheu {chosen_pokemon.name}!")
+                return chosen_pokemon
+            else:
+                print("Número inválido. Tente novamente: ", end="", flush=True)
+        except queue.Empty:
+            print("\nTempo para escolha esgotado.")
+            return None # Retorna None se o jogador não escolher a tempo
+        except (ValueError, IndexError):
+            print("\nEntrada inválida. Por favor, digite um número da lista: ", end="", flush=True)
+
+
+
 
     #Roda em uma thread separada para enviar mensagens periódicas ao servidor e manter a conexão viva.
     def send_keepalive(sock):
