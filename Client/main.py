@@ -1,14 +1,34 @@
 from crypto import Crypto
 from network import Network
-from server_client import ServerClient
-from battle import Battle
-from queue_manager import QueueManager
+from comunicacaoServer import ServerClient
+from queueManager import QueueManager
 from leitor import Leitor, drenar_fila
-from pokedex import PokemonDB, choose_pokemon
-
+from pokemon import PokemonDB, choose_pokemon
+import logging
+import threading, queue, time, sys
 
 
 def main():
+
+    #Roda em uma thread separada para enviar mensagens periódicas ao servidor e manter a conexão viva.
+    
+    def send_keepalive(sock):
+        while True:
+            try:
+                time.sleep(20) # Envia a cada 20 segundos
+                if not ServerClient.send_json(sock, {"cmd": "KEEPALIVE"}):
+                    logging.error("Falha ao enviar keepalive. Conexão perdida.")
+                    break
+            except Exception:
+                logging.error("Conexão com o servidor perdida. Encerrando thread de keepalive.")
+                break # Encerra a thread se a conexão morrer
+
+
+
+    def input_default(prompt, default):
+        s = input(f"{prompt}").strip()
+        return s if s else default
+
 
     def udp_handler(msg, addr):
         try:
