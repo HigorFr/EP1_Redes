@@ -37,7 +37,6 @@ class QueueManager:
         t.start()
 
     def _process_send(self, opp, q, my_pokemon):
-        
     
         logging.warning("Desafio RECEB")
         if self.battle_started.is_set(): return
@@ -58,7 +57,7 @@ class QueueManager:
             logging.error("Falha ao enviar desafio: %s", e)
             return
         try:
-            resposta = q.get(timeout=20)
+            resposta = q.get(timeout=50)
         except queue.Empty:
             logging.info("Timeout aguardando resposta de %s", op_name); return
         if self.battle_started.is_set(): return
@@ -66,12 +65,20 @@ class QueueManager:
         if resposta and resposta.get('res') == 'ACE':
             logging.info("%s aceitou. Iniciando batalha (sou quem liga).", op_name)
             self.battle_started.set()
+
+
+
             ### MUDANÇA: Passa os nomes dos jogadores para a classe Battle ###
             b = Battle(self.my_name, op_name, my_pokemon, self.p2p_port, opp, dial=True, network=self.network, crypto=self.crypto, server_sock=self.server_sock, input_queue=self.input_queue, pokedex=self.pokedex)
             if b.prepare(): b.loop()
             self.battle_started.clear()
         else:
             logging.info("%s recusou o desafio.", op_name)
+
+
+
+
+
 
     def receive_challenge(self, opp):
         logging.info("Desafio recebido de %s", opp['name'])
@@ -89,6 +96,8 @@ class QueueManager:
         self.network.udp_send(res, ip=opp.get('ip', '255.255.255.255'), port=opp.get('udp_port', self.udp_port))
         logging.info("Aceitei desafio de %s", opp_name)
         self.battle_started.set()
+
+
         ### MUDANÇA: Passa os nomes dos jogadores para a classe Battle ###
         b = Battle(self.my_name,     opp_name, my_pokemon, self.p2p_port, opp, dial=False, network=self.network, crypto=self.crypto, server_sock=self.server_sock, input_queue=self.input_queue, pokedex=self.pokedex)
         try:

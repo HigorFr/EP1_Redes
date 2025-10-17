@@ -2,11 +2,13 @@ from utils import Utils
 
 class Pokemon:   
     """Guarda os atributos de um único Pokémon."""
-    def __init__(self, name, hp, attack, defense, speed, type1, type2, moves ):
+    def __init__(self, name, hp, attack, defense, special_attack, special_defense, speed, type1, type2, moves ):
         self.name = name
         self.hp = Utils.safe_int(hp)
         self.attack = Utils.safe_int(attack)
         self.defense = Utils.safe_int(defense)
+        self.special_attack = Utils.safe_int(special_attack)
+        self.special_defense = Utils.safe_int(special_defense)
         self.speed = Utils.safe_int(speed)
         self.type1 = type1
         self.type2 = type2

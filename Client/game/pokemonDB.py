@@ -67,6 +67,8 @@ class PokemonDB:
                         hp=row_clean['hp'],
                         attack=row_clean['attack'],
                         defense=row_clean['defense'],
+                        special_attack=row_clean['specialattack'],
+                        special_defense=row_clean['specialdefense'],
                         speed=row_clean['speed'],
                         type1=type1,
                         type2=type2,

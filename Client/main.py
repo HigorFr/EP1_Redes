@@ -8,7 +8,7 @@ import logging
 import threading, queue, time, sys
 from utils import Utils
 
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='\n[%(levelname)s] %(message)s')
 
 def choose_pokemon(pokedex: PokemonDB, input_queue: queue.Queue):
     #Mostra a lista de Pokémon e gerencia a escolha do jogador a partir da fila de entrada.
@@ -112,8 +112,7 @@ def main():
     except Exception as e:
 
 
-        logging.info("Tente colocar um servidor válido")
-        #logging.exception("Tente colocar um servidor válido")
+        logging.info("Não foi possível conectar, tente colocar um servidor válido")
         return
 
     queue_mgr = QueueManager(my_name, p2p_port, network, crypto, server_sock, udp_port, input_queue, pokedex)

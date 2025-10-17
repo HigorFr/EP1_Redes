@@ -1,13 +1,9 @@
 {
-    "B": {
-        "wins": 0,
-        "losses": 3
-    },
     "A": {
-        "wins": 3,
+        "wins": 0,
         "losses": 0
     },
-    "Higor": {
+    "B": {
         "wins": 0,
         "losses": 0
     }

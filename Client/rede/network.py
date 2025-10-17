@@ -41,6 +41,7 @@ class Network:
             port = self.udp_broadcast_port
         data = json.dumps(obj).encode()
         self.udp_sock.sendto(data, (ip, port))
+        logging.debug(f"Enviado {data} para {ip}:{port} ")
 
     def p2p_listen(self, port, backlog=1, timeout=None):
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
