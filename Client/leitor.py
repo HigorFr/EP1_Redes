@@ -2,6 +2,8 @@ import threading, sys
 import traceback
 import logging
 
+
+#as threads estavam dando dor de cabeça pra gerenciar input, então isso aqui meio que resolve criando uma fila de entrada. (não resolveu totalmente então criamos algumas gambiarras)
 class Leitor(threading.Thread):
     def __init__(self, input_queue):
         super().__init__(daemon=True)

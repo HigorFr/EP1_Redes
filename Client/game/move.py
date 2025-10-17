@@ -1,6 +1,8 @@
 from utils import Utils
 
 
+#classe que basicamente contem informações sobre movimento
+
 class Move:
     def __init__(self, name, move_type, category, contest, pp, power, accuracy, generation):
         self.name = name
@@ -21,6 +23,8 @@ class Move:
     def getCategory(self):
         return self.category
     
+
+    #isso aqui poderia ter ficado em battle, mas acho que aqui é mais organizado
     def type_multiplier(move_type, defender_types):
         effectiveness = {
             "Normal":    {"Rock": 0.5, "Ghost": 0, "Steel": 0.5},

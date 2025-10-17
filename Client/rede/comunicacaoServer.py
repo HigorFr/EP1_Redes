@@ -2,12 +2,15 @@ import socket
 import json
 import logging
 
+
+
+#Isso aqui é só uma camada a mais de abstração para comunicações diretas com o servidor
 class ServerClient:
     def __init__(self, server_ip, server_port):
         self.server_ip = server_ip
         self.server_port = server_port
 
-    # === MUDANÇA CRÍTICA: send_json agora detecta erros e retorna True/False ===
+    #send_json agora detecta erros e retorna True/False dependendo
     @staticmethod
     def send_json(sock, obj):
         """Envia um objeto JSON e retorna True em caso de sucesso, False se a conexão falhar."""
@@ -18,25 +21,25 @@ class ServerClient:
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
             return False
 
-    # === MUDANÇA CRÍTICA: recv_json agora lida com erros de forma mais robusta ===
+    
+    #recv_json agora lida com erros de forma mais robusta
     @staticmethod
     def recv_json(sock):
         """Recebe um objeto JSON e retorna None se a conexão falhar."""
         buf = b""
-        sock.settimeout(5.0)  # Adiciona timeout para evitar bloqueio eterno
+        sock.settimeout(5.0)  #adiciona timeout para evitar bloqueio eterno
         try:
             while True:
                 ch = sock.recv(1)
                 if not ch:
-                    return None  # Conexão fechada
+                    return None  #Conexão fechada
                 if ch == b"\n":
                     break
                 buf += ch
         except (ConnectionAbortedError, ConnectionResetError, OSError, socket.timeout):
             return None
         finally:
-            sock.settimeout(None)  # Remove o timeout
-
+            sock.settimeout(None)  #Remove o timeout
         try:
             return json.loads(buf.decode())
         except (json.JSONDecodeError, UnicodeDecodeError):
