@@ -198,10 +198,6 @@ class Battle:
                     
                     Utils.drenar_fila(self.input_queue)
                     raw = self.input_queue.get(timeout=60)
-
-                    #APAGAR
-                    print(f'RECEBIDO {raw} =====================')
-
                     move = raw.strip().lower()
                 
                     
