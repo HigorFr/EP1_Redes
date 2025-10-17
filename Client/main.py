@@ -23,6 +23,9 @@ def choose_pokemon(pokedex: PokemonDB, input_queue: queue.Queue):
         try:
             # ### MUDANÇA: Pega a entrada da FILA, não mais do input() ###
             # Espera até 60 segundos pela escolha do jogador.
+
+
+            #Apagar
             choice = input_queue.get(timeout=60)
             
             if not choice: continue

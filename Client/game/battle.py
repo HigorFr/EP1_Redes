@@ -148,8 +148,9 @@ class Battle:
         if not opp_pokemon:
             logging.error(f"Oponente escolheu um Pokémon inválido: {opp_pokemon_name}"); return False
             
-
+        
         my_turn = self.my_pokemon.speed > opp_pokemon.speed
+        if(self.my_pokemon.speed == opp_pokemon.speed): my_turn = self.dial
 
         self.state = Battle.State(
             my_player_name=self.my_player_name, opp_player_name=self.opp_player_name,
@@ -179,22 +180,28 @@ class Battle:
             logging.error("Estado da batalha não foi inicializado."); return
 
         logging.info(f"=== BATALHA: {self.state.my_pokemon.name} vs {self.state.opp_pokemon.name} ===")
-        logging.info("Movimentos disponíveis: %s", ", ".join(self.my_pokemon.moves_str))
+        #logging.info("Movimentos disponíveis: %s", ", ".join(self.my_pokemon.moves_str))
         
         
-        Utils.drenar_fila(self.input_queue)
+        #Utils.drenar_fila(self.input_queue)
         
         
         try:
             while not self.state.finished():
                 if self.state.my_turn:
                     print("Seu turno! Seus movimentos:", ", ".join([move.capitalize() for move in self.my_pokemon.moves_str])) #Só captalizando pra ficar bonito
+                   
+                   
+                   
+                    # Garante que apenas input novo após o prompt será considerado
+                    Utils.adicionar_fila(self.input_queue, 'END')
+                    
+                    Utils.drenar_fila(self.input_queue)
                     raw = self.input_queue.get(timeout=60)
-                    
-                    #Problema de 2 input, não conseguimos achar ainda o porquê
-                    logging.debug(f"Input recebido: '{raw}'")
 
-                    
+                    #APAGAR
+                    print(f'RECEBIDO {raw} =====================')
+
                     move = raw.strip().lower()
                 
                     

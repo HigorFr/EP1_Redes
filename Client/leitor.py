@@ -1,4 +1,5 @@
 import threading, sys 
+import traceback
 
 
 class Leitor(threading.Thread):
@@ -14,5 +15,14 @@ class Leitor(threading.Thread):
                     break
                 # remove \n mas preserva string vazia caso usuário só pressione Enter
                 self.input_queue.put(line.rstrip("\n"))
-            except Exception:
+                self.debug_print_queue()
+
+            except Exception as e:
+                print("Erro em Leitor:", e)
+                traceback.print_exc()
                 break
+
+    def debug_print_queue(self):
+        print(list(self.input_queue.queue), self.input_queue.unfinished_tasks)
+
+
