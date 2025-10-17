@@ -129,6 +129,8 @@ class Battle:
         self.fileobj = self.conn.makefile("rwb")
         self.shared_key = self.crypto.shared_key(self.opp_info['public_key'])
         
+        logging.debug(f"Shared key e troca de Pokémon feitos com sucesso: { self.shared_key }")
+
         my_choice_msg = Crypto.encrypt_json(self.shared_key, {"type": "POKEMON_CHOICE", "name": self.my_pokemon.name})
         Network.send_line(self.conn, my_choice_msg.encode())
 
@@ -156,7 +158,7 @@ class Battle:
             my_player_name=self.my_player_name, opp_player_name=self.opp_player_name,
             my_pokemon=self.my_pokemon, opp_pokemon=opp_pokemon, my_turn=my_turn
         )
-        logging.debug("Shared key e troca de Pokémon feitos com sucesso")
+        
         return True
 
 
@@ -244,6 +246,10 @@ class Battle:
         winner = self.state.winner()
         logging.info(f"Resultado da batalha: {winner}")
         
+        #Para a main não ficar enchendo o saco com os enters vazios
+        Utils.adicionar_fila(self.input_queue, 'END')
+        Utils.drenar_fila(self.input_queue)
+
         ### MUDANÇA CRÍTICA: Apenas o vencedor envia o resultado ###
         if winner == self.state.my_player_name:
             logging.debug("Eu sou o vencedor. Reportando o resultado ao servidor.")

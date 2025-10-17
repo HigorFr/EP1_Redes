@@ -5,6 +5,9 @@ import socket
 import threading
 import json
 import time
+import logging
+import ipaddress
+
 
 HOST = "0.0.0.0"
 TCP_PORT = 5000
@@ -23,6 +26,9 @@ def load_stats():
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
+
+
+logging.basicConfig(level=logging.DEBUG, format='\n[%(levelname)s] %(message)s')
 
 ### MUDANÇA: Função de salvar agora é mais inteligente ###
 def save_all_stats():
@@ -90,33 +96,70 @@ def handle_client(conn: socket.socket, addr):
 
             cmd = msg.get("cmd")
 
+            logging.debug(f"Mensagem recebedida {msg}")
+
             if cmd == "REGISTER":
                 name = msg.get("name")
                 p2p_port = int(msg.get("p2p_port", 0)); udp_port = int(msg.get("udp_port", 0))
                 pk = msg.get("public_key")
+                
                 if not all([name, p2p_port, pk, udp_port]):
                     send({"type":"ERR","msg":"missing_fields"}); continue
+              
+
+             # obtém o IP real da máquina do servidor (não o localhost) nos casos de um cliente também ser o servidor
+                if addr[0] in ("127.0.0.1", "localhost"):
+                    import socket
+
+   
+                    try:
+                        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                            s.connect(("8.8.8.8", 80))  # Conecta temporariamente ao Google DNS só pra descobrir o IP local
+                            client_ip = s.getsockname()[0]
+           
+
+                    except Exception:
+                        client_ip = "127.0.0.1"  # fallback se ele n conseguir pegar o ip
+
+                else: client_ip = addr[0]
+        
                 with lock:
                     if name in players:
                         send({"type":"ERR","msg":"name_in_use"}); continue
-                    
                     player_stats = saved_stats.get(name, {"wins": 0, "losses": 0})
                     players[name] = {
-                        "addr": addr, "public_key": pk, "p2p_port": p2p_port,
+                        "addr": (client_ip, addr[1]), "public_key": pk, "p2p_port": p2p_port,
                         "udp_port": udp_port, "last_seen": time.time(), "conn": conn,
                         "wins": player_stats["wins"], "losses": player_stats["losses"]
                     }
+
+
+                print(f"[SERVER] Registrado {name} com ip {client_ip} p2p_port {p2p_port}", flush=True)
+
                 send({"type":"OK","msg":"registered"})
                 udp_broadcast({"type":"EVENT","sub":"JOIN","name":name})
             
+
+
+
+
+
             elif cmd == "KEEPALIVE":
                 pass
+
+
+
 
             elif cmd == "GET_STATS":
                 with lock:
                     if name in players:
                         send({"type": "STATS", "wins": players[name]["wins"], "losses": players[name]["losses"]})
                     else: send({"type": "ERR", "msg": "player_not_found"})
+
+
+
+
+
 
             elif cmd == "RANKING":
                 with lock:
@@ -131,6 +174,11 @@ def handle_client(conn: socket.socket, addr):
                         for n, d in players.items()
                     ]
                 send({"type": "LIST", "players": player_list})
+
+
+
+
+
 
             elif cmd in ("CHALLENGE", "MATCH_RANDOM", "GET_INFO"):
                 target = msg.get("target")

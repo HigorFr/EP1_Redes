@@ -10,10 +10,19 @@ from utils import Utils
 
 logging.basicConfig(level=logging.DEBUG, format='\n[%(levelname)s] %(message)s')
 
+
+
+
+import random
+import queue
+
 def choose_pokemon(pokedex: PokemonDB, input_queue: queue.Queue):
-    #Mostra a lista de Pokémon e gerencia a escolha do jogador a partir da fila de entrada.
-    print("\n--- Escolha seu Pokémon para a batalha! ---")
-    available_pokemons = pokedex.get_all_names()
+    
+    print("\n--- Escolha dentre esses Pokémon para a batalha! ---")
+    all_pokemons = pokedex.get_all_names()
+
+    # Seleciona 10 Pokémon aleatórios (ou menos, se tiver menos de 10 disponíveis)
+    available_pokemons = random.sample(all_pokemons, k=min(10, len(all_pokemons)))
     
     for i, name in enumerate(available_pokemons, 1):
         print(f"  {i}. {name}")
@@ -21,13 +30,11 @@ def choose_pokemon(pokedex: PokemonDB, input_queue: queue.Queue):
 
     while True:
         try:
-            # ### MUDANÇA: Pega a entrada da FILA, não mais do input() ###
-            # Espera até 60 segundos pela escolha do jogador.
-
-
+            # Espera até 60 segundos pela escolha do jogador
             choice = input_queue.get(timeout=60)
             
-            if not choice: continue
+            if not choice:
+                continue
             
             choice_idx = int(choice) - 1
             
@@ -40,7 +47,7 @@ def choose_pokemon(pokedex: PokemonDB, input_queue: queue.Queue):
                 print("Número inválido. Tente novamente: ", end="", flush=True)
         except queue.Empty:
             print("\nTempo para escolha esgotado.")
-            return None # Retorna None se o jogador não escolher a tempo
+            return None
         except (ValueError, IndexError):
             print("\nEntrada inválida. Por favor, digite um número da lista: ", end="", flush=True)
 
@@ -132,7 +139,7 @@ def main():
             print(
                 "\nDigite comando (list, stats, ranking, desafiar <nome>, aleatorio, aceitar <nome>, negar <nome>, sair): ",
                 end="",
-                flush=True
+                flush=False
             )
 
             try:
@@ -140,9 +147,6 @@ def main():
             except (queue.Empty, KeyboardInterrupt):
                 continue
 
-            if queue_mgr.get_battle_started():
-                Utils.drenar_fila(input_queue)
-                continue
 
             cmd = raw.strip()
             if not cmd:
@@ -221,10 +225,12 @@ def main():
                     if command == 'aceitar':
                         queue_mgr.accept(opp_info['name'], my_pokemon)
                     else:
-                        logging.warning("Enviado desafio")
                         queue_mgr.add_send(opp_info, my_pokemon)
                 else:
                     logging.warning("Não foi possível encontrar um oponente.")
+
+
+
 
             # ======== NEGAR ========
             elif command == 'negar':
@@ -233,10 +239,15 @@ def main():
                     continue
                 queue_mgr.reject(args[0])
 
+
+
             # ======== SAIR ========
             elif command == 'sair':
                 logging.info("Saindo...")
                 break
+
+
+
 
             # ======== INVÁLIDO ========
             else:
@@ -253,11 +264,10 @@ if __name__ == '__main__':
     main()
 
 
+    #O que falta:
 
     #Falta por módulo de "Contatos", ou seja, lista pessoas que você salvou a chave pública, porta e UDP para que não precise do servidor para iniciar batalha
         #Provavlemente vale a pena deixar um arquivo txt para um usuário sempre iniciar com aquelas configurações, e nese também vai guardar os contatos
-
-    #Falta colocar um módulo de gerenciar escolha do pokemon e colocar mais pokemon na base de dados
 
     #Falta chat
 

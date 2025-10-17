@@ -1,6 +1,6 @@
 import threading, sys 
 import traceback
-
+import logging
 
 class Leitor(threading.Thread):
     def __init__(self, input_queue):
@@ -23,6 +23,6 @@ class Leitor(threading.Thread):
                 break
 
     def debug_print_queue(self):
-        print(list(self.input_queue.queue), self.input_queue.unfinished_tasks)
+        logging.debug(f"Fila de input:  {list(self.input_queue.queue), self.input_queue.unfinished_tasks}")
 
 

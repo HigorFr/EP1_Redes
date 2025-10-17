@@ -4,7 +4,7 @@ import threading
 import queue
 import time
 from game.battle import Battle
-
+from utils import Utils
 
 
 class QueueManager:
@@ -31,17 +31,11 @@ class QueueManager:
         q = queue.Queue()
         self.enviados[desafio_id] = q
         t = threading.Thread(target=self._process_send, args=(opp, q, my_pokemon), daemon=True)
-        
-        #APGAR
-        logging.warning("Desafio Enviado")
         t.start()
 
     def _process_send(self, opp, q, my_pokemon):
-    
-        logging.warning("Desafio RECEB")
+            
         if self.battle_started.is_set(): return
-
-       
 
         op_name = opp['name']
         dest_udp_port = opp.get('udp_port', self.udp_port)
@@ -56,14 +50,24 @@ class QueueManager:
         except Exception as e:
             logging.error("Falha ao enviar desafio: %s", e)
             return
+        
+        
         try:
             resposta = q.get(timeout=50)
         except queue.Empty:
+
+            Utils.adicionar_fila(self.input_queue, 'END')
+            Utils.drenar_fila(self.input_queue)
+            self.battle_started.clear()
             logging.info("Timeout aguardando resposta de %s", op_name); return
+
+
+
+
         if self.battle_started.is_set(): return
             
         if resposta and resposta.get('res') == 'ACE':
-            logging.info("%s aceitou. Iniciando batalha (sou quem liga).", op_name)
+            logging.info("%s aceitou. Iniciando batalha.", op_name)
             self.battle_started.set()
 
 
