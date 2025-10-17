@@ -137,7 +137,7 @@ def main():
     try:
         server_sock = server.register(my_name, p2p_port, crypto.public_key_b64(), udp_port)
     except Exception:
-        logging.info("Não foi possível conectar, tente colocar um servidor válido")
+        logging.info("Erro, tente colocar um servidor válido")
         return
 
     queue_mgr = QueueManager(my_name, p2p_port, network, crypto, server_sock, udp_port, input_queue, pokedex)

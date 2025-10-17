@@ -45,12 +45,12 @@ class ServerClient:
 
     def register(self, name, p2p_port, pk_b64, udp_port):
         try:
+            s.settimeout(5)
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect((self.server_ip, self.server_port))
 
         except (ConnectionRefusedError, socket.gaierror) as e:
             logging.info("Não foi possível conectar ao servidor")
-            #logging.error(f"Não foi possível conectar ao servidor: {e}")
             s.close() 
             raise
 

@@ -58,7 +58,8 @@ class PokemonDB:
 
 
                     valid_moves = [m for m in moves_list if m.lower() in self.moves]
-                    chosen_move_names = random.sample(valid_moves, min(4, len(valid_moves)))
+                    unique_valid_moves = list(set(valid_moves))
+                    chosen_move_names = random.sample(unique_valid_moves, min(4, len(unique_valid_moves)))
                     objetos_moves = [self.moves[m.lower()] for m in chosen_move_names]
 
 
