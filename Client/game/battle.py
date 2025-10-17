@@ -2,15 +2,14 @@ import logging
 import threading, queue
 
 from utils import Utils
-from pokemon import Pokemon, PokemonDB
-from crypto import Crypto
-from network import Network
-from comunicacaoServer import ServerClient
+from game.pokemonDB import Pokemon
+from rede.crypto import Crypto
+from rede.network import Network
+from rede.comunicacaoServer import ServerClient
 
 
 
-class Battle:
-    
+class Battle:    
     class State:
         ### MUDANÇA: O construtor agora também armazena os nomes dos jogadores ###
         def __init__(self, my_player_name: str, opp_player_name: str, my_pokemon: Pokemon, opp_pokemon: Pokemon, my_turn: bool):
@@ -26,8 +25,6 @@ class Battle:
             self.lock = threading.Lock()
 
         def apply_move(self, move, by_me):
-
-                
             dmg = move.getDmg()
 
             with self.lock:
@@ -128,6 +125,11 @@ class Battle:
                 if self.state.my_turn:
                     print("Seu turno! Seus movimentos:", ", ".join(self.my_pokemon.moves_str))
                     raw = self.input_queue.get(timeout=60)
+                    
+                    #Apagar
+                    print(f"Input recebido: '{raw}'")
+
+                    
                     move = raw.strip().lower()
                 
                     

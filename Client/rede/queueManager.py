@@ -3,7 +3,7 @@ import logging
 import threading
 import queue
 import time
-from battle import Battle
+from game.battle import Battle
 
 
 

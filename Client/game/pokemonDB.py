@@ -2,43 +2,12 @@ import logging
 import csv
 import ast
 import random
-from move import Move
-from utils import Utils
-
-
-
-class Pokemon:
-   
-
- 
-
-   
-    """Guarda os atributos de um único Pokémon."""
-    def __init__(self, name, hp, attack, defense, speed, type1, type2, moves ):
-        self.name = name
-        self.hp = Utils.safe_int(hp)
-        self.attack = Utils.safe_int(attack)
-        self.defense = Utils.safe_int(defense)
-        self.speed = Utils.safe_int(speed)
-        self.type1 = type1
-        self.type2 = type2
-        self.moves = moves
-        self.moves_str = [move.name for move in moves]
-
-
-        
-
-    def __repr__(self):
-        return f"<Pokemon: {self.name}, HP: {self.hp}>"
-
-    def getMoves(self):
-        return self.moves
-
-
+from game.move import Move
+from game.pokemon import Pokemon
 
 class PokemonDB:
     """Carrega e gerencia a base de dados de Pokémon a partir de um arquivo CSV."""
-    def __init__(self, path='Client/'):
+    def __init__(self, path='Client/data/'):
         self.path = path
         self.pokemons = {} # Dicionário para guardar os pokémons por nome
         self.moves = {}
@@ -105,11 +74,6 @@ class PokemonDB:
                     )
 
                     self.pokemons[p.name.lower()] = p
-
-
-
-
-
 
             logging.info(f"{len(self.pokemons)} Pokémon carregados da base de dados.")
        

@@ -1,9 +1,9 @@
-from crypto import Crypto
-from network import Network
-from comunicacaoServer import ServerClient
-from queueManager import QueueManager
+from rede.crypto import Crypto
+from rede.network import Network
+from rede.comunicacaoServer import ServerClient
+from rede.queueManager import QueueManager
 from leitor import Leitor
-from pokemon import PokemonDB
+from game.pokemonDB import PokemonDB
 import logging
 import threading, queue, time, sys
 from utils import Utils
