@@ -45,8 +45,9 @@ class ServerClient:
 
     def register(self, name, p2p_port, pk_b64, udp_port):
         try:
-            s.settimeout(5)
+            
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(5)
             s.connect((self.server_ip, self.server_port))
 
         except (ConnectionRefusedError, socket.gaierror) as e:
