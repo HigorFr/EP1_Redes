@@ -16,8 +16,9 @@ logging.basicConfig(level=logging.DEBUG, format='\n[%(levelname)s] %(message)s')
 import random
 import queue
 
+
+#Isso foi feito na main por motivos de facilidade
 def choose_pokemon(pokedex: PokemonDB, input_queue: queue.Queue):
-    
     print("\n--- Escolha dentre esses Pokémon para a batalha! ---")
     all_pokemons = pokedex.get_all_names()
 
@@ -50,20 +51,28 @@ def choose_pokemon(pokedex: PokemonDB, input_queue: queue.Queue):
             return None
         except (ValueError, IndexError):
             print("\nEntrada inválida. Por favor, digite um número da lista: ", end="", flush=True)
+            
+
 
 
 
 #Roda em uma thread separada para enviar mensagens periódicas ao servidor e manter a conexão viva.
-def send_keepalive(sock):
+def send_keepalive(sock,input_queue, queue):
     while True:
-        try:
-            time.sleep(20) # Envia a cada 20 segundos
-            if not ServerClient.send_json(sock, {"cmd": "KEEPALIVE"}):
-                logging.error("Falha ao enviar keepalive. Conexão perdida.")
-                break
-        except Exception:
-            logging.error("Conexão com o servidor perdida. Encerrando thread de keepalive.")
-            break # Encerra a thread se a conexão morrer
+        time.sleep(20) # Envia a cada 20 segundos (Foi usado mais para teste, mas o tempo poderia ser menor)
+        if not queue.get_battle_started():    
+            try:
+                logging.debug("Enviado Keep alive.")
+                if not ServerClient.send_json(sock, {"cmd": "KEEPALIVE"}):
+                    logging.error("Falha ao enviar keepalive. Conexão perdida. Batalhas em andamento não foram salvas")
+                    logging.error("Por favor reabra o programa com um servidor válido.")
+                    #Gambiarra totalmente funcional e lógica
+                    Utils.adicionar_fila(input_queue, 'Sair')
+                    break
+            except Exception:
+                logging.error("Conexão com o servidor perdida. Por favor reabra o programa com um servidor válido.")
+                Utils.adicionar_fila(input_queue, 'Sair')
+                break # Encerra a thread se a conexão morrer
 
 
 
@@ -94,9 +103,11 @@ def main():
     server = ServerClient(server_ip, server_port)
 
 
-
+#Gerenciador do que ele receber de UDP
     def udp_handler(msg, addr):
         try:
+            
+            #apagar
             t = msg.get('type')
             if t == 'DES':
                 opp = msg.get('opponent')
@@ -104,6 +115,15 @@ def main():
                     return  # Ignora desafios para si mesmo
                 opp['ip'] = addr[0]
                 queue_mgr.receive_challenge(opp)
+
+
+            elif t == 'EVENT':
+                sub = msg.get('sub')
+                if sub == 'JOIN':
+                    joined_name = msg.get('name')
+                    logging.info(f"O jogador {joined_name} entrou no servidor.")
+
+
             elif t == 'RES':
                 opp_name = msg.get('opp')
                 desafio_id = f"{my_name}-{opp_name}"
@@ -114,20 +134,16 @@ def main():
             logging.exception("Erro tratando mensagem UDP")
 
 
-
-
     try:
         server_sock = server.register(my_name, p2p_port, crypto.public_key_b64(), udp_port)
-    except Exception as e:
-
-
+    except Exception:
         logging.info("Não foi possível conectar, tente colocar um servidor válido")
         return
 
     queue_mgr = QueueManager(my_name, p2p_port, network, crypto, server_sock, udp_port, input_queue, pokedex)
     
     network.start_udp_listener(udp_handler)
-    threading.Thread(target=send_keepalive, args=(server_sock,), daemon=True).start()
+    threading.Thread(target=send_keepalive, args=(server_sock, input_queue, queue_mgr), daemon=True).start()
 
     try:
         # Loop principal com comandos atualizados: list, stats, ranking, etc.
@@ -253,18 +269,22 @@ def main():
             else:
                 logging.info("Comando inválido")
 
+    except:
+        print("Erro de comunicação com o servidor, encerrando...")
+
     finally:
         try:
             server_sock.close()
+            return
         except:
-            pass
+            return
 
 
 if __name__ == '__main__':
     main()
 
 
-    #O que falta:
+    #O que falta (que provavelemtne não vai dar tempo):
 
     #Falta por módulo de "Contatos", ou seja, lista pessoas que você salvou a chave pública, porta e UDP para que não precise do servidor para iniciar batalha
         #Provavlemente vale a pena deixar um arquivo txt para um usuário sempre iniciar com aquelas configurações, e nese também vai guardar os contatos
