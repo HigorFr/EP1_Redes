@@ -15,7 +15,7 @@ O repositório está organizado da seguinte forma:
 
 * **Python**: Linguagem de programação utilizada para implementar a aplicação cliente e servidor.
 * **Sockets**: Mecanismo de comunicação dentro do Python utilizado para comunicação entre cliente e servidor.
-* **TeX**: Utilizado para a confecção do relatório do projeto.
+* **LaTeX**: Utilizado para a confecção do relatório do projeto.
 
 ## Como Executar
 
