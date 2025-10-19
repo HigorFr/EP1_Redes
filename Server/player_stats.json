@@ -6,5 +6,13 @@
     "A": {
         "wins": 0,
         "losses": 3
+    },
+    "Higor": {
+        "wins": 1,
+        "losses": 0
+    },
+    "Eduardo": {
+        "wins": 0,
+        "losses": 1
     }
 }
