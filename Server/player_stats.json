@@ -1,10 +1,14 @@
 {
     "B": {
-        "wins": 3,
-        "losses": 0
+        "wins": 5,
+        "losses": 1
     },
     "A": {
-        "wins": 0,
+        "wins": 1,
+        "losses": 2
+    },
+    "Ash": {
+        "wins": 1,
         "losses": 2
     }
 }

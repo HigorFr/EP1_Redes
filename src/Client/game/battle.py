@@ -31,7 +31,7 @@ class Battle:
             power = move.getPower()
 
             # Escolhe quais atributos usar
-            if move.getCategory() == "physical":
+            if move.getCategory().lower() == "physical":
                 attack = attacker.attack
                 defense = defender.defense
             else:
@@ -63,6 +63,9 @@ class Battle:
 
             # Fórmula final simplificada
             damage = (((2 * 50 / 5 + 2) * power * (attack / defense)) / 50 + 2) * stab * type_effectiveness  #* random_factor
+
+            logging.debug(damage)
+            logging.debug(f"Power {power}. Attack {attack}. Defesa {defense}. Stab {stab}. Efetividade {type_effectiveness}.")
 
             return int(damage)
 
