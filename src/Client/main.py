@@ -111,8 +111,6 @@ def main():
 #Gerenciador do que ele receber de UDP
     def udp_handler(msg, addr):
         try:
-            print(msg)
-            print("============")
             #apagar
             t = msg.get('type')
             if t == 'DES':
