@@ -125,7 +125,7 @@ def handle_client(conn: socket.socket, addr):
 
             cmd = msg.get("cmd")
 
-            logging.debug(f"Mensagem recebedida {msg}")
+            logging.debug(f"Mensagem recebida {msg}")
 
             if cmd == "REGISTER":
                 name = msg.get("name")

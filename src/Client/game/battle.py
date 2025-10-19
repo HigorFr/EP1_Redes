@@ -9,7 +9,6 @@ from game.move import Move
 
 class Battle:    
     class State:
-        ### MUDANÇA: O construtor agora também armazena os nomes dos jogadores ###
         def __init__(self, my_player_name: str, opp_player_name: str, my_pokemon: Pokemon, opp_pokemon: Pokemon, my_turn: bool):
             self.my_player_name = my_player_name
             self.opp_player_name = opp_player_name
