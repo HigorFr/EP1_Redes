@@ -6,7 +6,6 @@ from rede.crypto import Crypto
 from rede.network import Network
 from rede.comunicacaoServer import ServerClient
 from game.move import Move
-import random
 
 class Battle:    
     class State:

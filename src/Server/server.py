@@ -6,7 +6,6 @@ import threading
 import json
 import time
 import logging
-import ipaddress
 
 
 HOST = "0.0.0.0"
