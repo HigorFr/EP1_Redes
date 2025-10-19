@@ -14,5 +14,13 @@
     "A": {
         "wins": 0,
         "losses": 2
+    },
+    "Ash": {
+        "wins": 0,
+        "losses": 0
+    },
+    "Misty": {
+        "wins": 0,
+        "losses": 1
     }
 }

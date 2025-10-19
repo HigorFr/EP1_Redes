@@ -111,7 +111,8 @@ def main():
 #Gerenciador do que ele receber de UDP
     def udp_handler(msg, addr):
         try:
-            
+            print(msg)
+            print("============")
             #apagar
             t = msg.get('type')
             if t == 'DES':
@@ -121,13 +122,15 @@ def main():
                 opp['ip'] = addr[0]
                 queue_mgr.receive_challenge(opp)
 
-
             elif t == 'EVENT':
                 sub = msg.get('sub')
                 if sub == 'JOIN':
                     joined_name = msg.get('name')
                     logging.info(f"O jogador {joined_name} entrou no servidor.")
 
+                elif sub == 'LEAVE':
+                    joined_name = msg.get('name')
+                    logging.info(f"O jogador {joined_name} saiu do servidor.")
 
             elif t == 'RES':
                 opp_name = msg.get('opp')

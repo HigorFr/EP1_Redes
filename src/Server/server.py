@@ -52,7 +52,6 @@ def load_stats():
 
 ### MUDANÇA: Função de salvar agora é mais inteligente ###
 def save_all_stats():
-    """Mescla os stats dos jogadores online com os já salvos e escreve no arquivo."""
     with lock:
         # Carrega o que já existe no disco para não perder dados de jogadores offline
         all_stats = load_stats()
@@ -76,7 +75,18 @@ def udp_broadcast(msg: dict):
     data = json.dumps(msg).encode()
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        s.sendto(data, ("255.255.255.255", UDP_BROADCAST_PORT))
+        with lock:
+            for name, data_player in players.items():
+                addr = data_player["addr"][0]
+                port = data_player["udp_port"]
+                try:
+                    s.sendto(data, (addr, port))
+                    logging.debug(f"[UDP] Enviado para {name} ({addr}:{port})")
+                except Exception as e:
+                    logging.warning(f"[UDP] Falha ao enviar para {name} ({addr}:{port}) - {e}")
+
+
+
 
 def check_inactive_clients():
     while True:
@@ -253,7 +263,7 @@ def handle_client(conn: socket.socket, addr):
                         json.dump(all_stats, f, indent=4)
                     print(f"[STATS] Estatísticas de {me} e {op} atualizadas e salvas.")
                 
-                udp_broadcast({"type":"EVENT","sub":"RESULT","p1":me,"p2":op,"winner":winner})
+                #udp_broadcast({"type":"EVENT","sub":"RESULT","p1":me,"p2":op,"winner":winner})
                 send({"type":"OK","msg":"result_recorded"})
             else:
                 send({"type":"ERR","msg":"unknown_cmd"})
