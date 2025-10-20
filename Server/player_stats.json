@@ -10,5 +10,13 @@
     "Ash": {
         "wins": 1,
         "losses": 2
+    },
+    "LL": {
+        "wins": 1,
+        "losses": 0
+    },
+    "Cd": {
+        "wins": 0,
+        "losses": 1
     }
 }
