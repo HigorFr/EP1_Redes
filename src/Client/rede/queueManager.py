@@ -9,6 +9,7 @@ from utils import Utils
 
 class QueueManager:
     def __init__(self, my_name, p2p_port, network, crypto, server_sock, udp_port, input_queue, pokedex):
+        self.timeout_request = 50  # segundos do timeout aceitar ou não o desafio
         self.my_name = my_name
         self.p2p_port = p2p_port
         self.network = network
@@ -53,7 +54,7 @@ class QueueManager:
         
         
         try:
-            resposta = q.get(timeout=50)
+            resposta = q.get(timeout=self.timeout_request)
         except queue.Empty:
 
             Utils.adicionar_fila(self.input_queue, 'END')
@@ -93,7 +94,7 @@ class QueueManager:
         if opp_name not in self.recebidos:
             logging.info("Nenhum desafio de %s", opp_name); return
         opp = self.recebidos.pop(opp_name)
-        if time.time() - opp["hora"] > 20:
+        if time.time() - opp["hora"] > self.timeout_request:
             logging.info("Desafio de %s expirou", opp_name); return
             
         res = {"type": "RES", "opp": self.my_name, "res": "ACE"}
