@@ -10,7 +10,6 @@ import logging
 
 HOST = "0.0.0.0"
 TCP_PORT = 5000
-UDP_BROADCAST_PORT = 5001
 CLIENT_TIMEOUT = 60
 
 import os, sys
