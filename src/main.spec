@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['Client/main.py'],
+    ['Client\\main.py'],
     pathex=[],
     binaries=[],
     datas=[],
