@@ -7,6 +7,14 @@ import json
 import logging
 
 
+#Particularmente a parte que eu mais gostei de mexer
+    #Usamos o GPT para enetender como funciona criptografia básica e usamos aqui
+    #A main cria uma chave pública a cada sessão, e depois compartilha com o servidor
+    #Quem desafia pega a chave pública e o ip (pelo server)
+    # Depois disso a comunicação fica entre eles, a única mensagem não criptografada enviada é a chave pública de quem está desafiando para o desafiado
+    #A partir daí eles já realizam a operação para criar o segredo compartilhado entre eles
+    #Então eles passam a mensagem por um AESGCM e está feito. Quando chega é só descriptografar
+
 class Crypto:
     def __init__(self):
         self._sk = x25519.X25519PrivateKey.generate()

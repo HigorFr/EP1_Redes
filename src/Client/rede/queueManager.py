@@ -7,6 +7,9 @@ from game.battle import Battle
 from utils import Utils
 
 
+#gerenciador da fila de aceitar ou enviar desafios
+    #ela que vai chamaro processo que faz toda preparação da batalha
+
 class QueueManager:
     def __init__(self, my_name, p2p_port, network, crypto, server_sock, udp_port, input_queue, pokedex):
         self.timeout_request = 50  # segundos do timeout aceitar ou não o desafio
@@ -25,8 +28,10 @@ class QueueManager:
 
 
     def get_battle_started(self):
-        return self.battle_started.is_set()
+        return self.battle_started.is_set() #Isso aqui é algo que aprendemos em SO para evitar conflito de thread, é um mutex para não iniciar outra batalha enquanto outra está ativa (aulas do norton valeram a pena)
 
+
+    #cada desafio enviado é uma thread que só fica esperando resposta até um timeout
     def add_send(self, opp, my_pokemon):
         desafio_id = f"{self.my_name}-{opp['name']}"
         q = queue.Queue()
@@ -34,6 +39,9 @@ class QueueManager:
         t = threading.Thread(target=self._process_send, args=(opp, q, my_pokemon), daemon=True)
         t.start()
 
+
+
+    #Envia desafio e espera resposta
     def _process_send(self, opp, q, my_pokemon):
             
         if self.battle_started.is_set(): return
@@ -53,6 +61,7 @@ class QueueManager:
             return
         
         
+        #caso de timeout
         try:
             resposta = q.get(timeout=self.timeout_request)
         except queue.Empty:
@@ -64,7 +73,7 @@ class QueueManager:
 
 
 
-
+        
         if self.battle_started.is_set(): return
             
         if resposta and resposta.get('res') == 'ACE':
@@ -84,12 +93,13 @@ class QueueManager:
 
 
 
-
+    #Isso aqui é chamado lá pelo UDP Handler
     def receive_challenge(self, opp):
         logging.info("Desafio recebido de %s", opp['name'])
         opp["hora"] = time.time()
         self.recebidos[opp['name']] = opp
 
+    #Aqui é chamado do comando "aceitar" da main
     def accept(self, opp_name, my_pokemon):
         if opp_name not in self.recebidos:
             logging.info("Nenhum desafio de %s", opp_name); return
@@ -103,7 +113,12 @@ class QueueManager:
         self.battle_started.set()
 
 
-        ### MUDANÇA: Passa os nomes dos jogadores para a classe Battle ###
+
+
+        #Isso aquiPassa os nomes dos jogadores para a classe Battle
+        #Observa que ele já prepara a batalha depois de aceitar, mesmo se quem tiver desafiado a batalha já tiver iniciado com outra pessoa
+            #Nesse caso quem enviou vai ficar esperando sem respota até dar timeout e acabar a batalha, dava para arrumar isso fazendo uma nova mensagem (tipo ack) que volta de quem desafiou para confirmar
+
         b = Battle(self.my_name,     opp_name, my_pokemon, self.p2p_port, opp, dial=False, network=self.network, crypto=self.crypto, server_sock=self.server_sock, input_queue=self.input_queue, pokedex=self.pokedex)
         try:
             if b.prepare(): b.loop()
@@ -112,6 +127,8 @@ class QueueManager:
         finally:
             self.battle_started.clear()
 
+
+    #Rjeita, só para quem enviou não ficar esperando
     def reject(self, opp_name):
         if opp_name not in self.recebidos:
             logging.info("Nenhum desafio de %s", opp_name); return

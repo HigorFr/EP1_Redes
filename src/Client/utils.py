@@ -1,3 +1,6 @@
+
+#funçoes auxiliares (usado em muitos pacots)
+
 import queue
 class Utils:
     def drenar_fila(q):

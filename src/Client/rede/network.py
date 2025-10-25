@@ -1,6 +1,8 @@
 import socket, threading, json, logging
 
 
+#O coração da comunicação, basciamente o nível mais baixo do projeto
+    #Aqui é onde os sockets são de fato usado, o resto do projeto abstrai usando as funções daqui
 class Network:
     def __init__(self, udp_broadcast_port):
         self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -8,6 +10,8 @@ class Network:
         self.udp_broadcast_port = udp_broadcast_port
         self.BUFFER_SIZE = 4096
 
+
+    #UDP ta sempre ligado, tratando o que recebe pela função UDP_handler
     def start_udp_listener(self, handler):
         def _listen():
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -35,7 +39,7 @@ class Network:
         t.start()
 
 
-
+    #Envia mensagem UDP (autoexplicativo)
     def udp_send(self, obj, ip='255.255.255.255', port=None):
         if port is None:
             port = self.udp_broadcast_port
@@ -43,6 +47,7 @@ class Network:
         self.udp_sock.sendto(data, (ip, port))
         logging.debug(f"Enviado {data} para {ip}:{port} ")
 
+    #retorna a conexão p2p quando é fechada (isso para quem recebe)
     def p2p_listen(self, port, backlog=1, timeout=None):
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -58,6 +63,7 @@ class Network:
             pass
         return conn
 
+    #isso aqui é para quem envia a conexão p2p
     def p2p_connect(self, ip, port, timeout=5.0):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(timeout)
@@ -66,6 +72,7 @@ class Network:
         s.settimeout(None)
         return s
 
+    #Isso aqui são só funções auxiliares para colocar linhas dentro de um socket qualquer
     @staticmethod
     def send_line(sock, data):
         sock.sendall(data + b"\n")

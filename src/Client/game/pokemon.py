@@ -1,7 +1,7 @@
 from utils import Utils
 
 class Pokemon:   
-    """Guarda os atributos de um único Pokémon."""
+    #Abstração só pra facilitar manipular pokemons
     def __init__(self, name, hp, attack, defense, special_attack, special_defense, speed, type1, type2, moves ):
         self.name = name
         self.hp = Utils.safe_int(hp)

@@ -4,7 +4,8 @@ import logging
 
 
 
-#Isso aqui é só uma camada a mais de abstração para comunicações diretas com o servidor
+#Isso aqui é só uma camada a mais de abstração para comunicações diretas com o servidor, tudo bem autoexplicativo
+
 class ServerClient:
     def __init__(self, server_ip, server_port):
         self.server_ip = server_ip
@@ -79,6 +80,8 @@ class ServerClient:
         logging.info("Registrado no servidor com sucesso")
         return s
 
+    #O random, não é nadamais que a mensagem do match sem o argumento de target
+    #o servidor fica responsavel de enviar para alguem aleaorio
     def match(self, sock, target=None):
         cmd = "CHALLENGE" if target else "MATCH_RANDOM"
         if not self.send_json(sock, {"cmd": cmd, "target": target}):

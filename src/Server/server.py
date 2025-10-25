@@ -85,7 +85,7 @@ def udp_broadcast(msg: dict):
 
 
 
-
+#Isso aqui fica recebendo os keepalive a trata caso algum cliente caia
 def check_inactive_clients():
     while True:
         time.sleep(30)
@@ -100,6 +100,8 @@ def check_inactive_clients():
                 except Exception:
                     pass
 
+
+#Aqui a principal função, tudo é bem explicito mas basicamente trata as mensagem dos clientes
 def handle_client(conn: socket.socket, addr):
     name = None
     try:
@@ -109,7 +111,10 @@ def handle_client(conn: socket.socket, addr):
             conn_file.write(line)
             conn_file.flush()
 
+
+
         while True:
+            #Loop principal
             raw = conn_file.readline()
             if not raw: break
             try:
@@ -171,7 +176,7 @@ def handle_client(conn: socket.socket, addr):
 
 
 
-
+            #não faz nada com a mensagem em sí
             elif cmd == "KEEPALIVE":
                 pass
 
@@ -207,8 +212,8 @@ def handle_client(conn: socket.socket, addr):
 
 
 
-
-            elif cmd in ("CHALLENGE", "MATCH_RANDOM", "GET_INFO"):
+            #As funções de desafio são um bloco
+            elif cmd in ("CHALLENGE", "MATCH_RANDOM", "GET_INFO"):              #Get_info é legado? provavelmente
                 target = msg.get("target")
                 with lock:
                     if cmd == "MATCH_RANDOM":
@@ -280,7 +285,7 @@ def handle_client(conn: socket.socket, addr):
         except: pass
 
 
-
+#Conexão tcp do server
 def tcp_server():
     reaper_thread = threading.Thread(target=check_inactive_clients, daemon=True)
     reaper_thread.start()

@@ -23,8 +23,8 @@ class Move:
     def getCategory(self):
         return self.category
     
-
-    #isso aqui poderia ter ficado em battle, mas acho que aqui é mais organizado
+    #dicionario para saber mutiplicador de tipo
+    #isso aqui poderia ter ficado em battle, ou em qualquer outro lugar, mas acho que aqui é mais organizado
     def type_multiplier(move_type, defender_types):
         effectiveness = {
             "Normal":    {"Rock": 0.5, "Ghost": 0, "Steel": 0.5},
@@ -52,11 +52,4 @@ class Move:
             multiplier *= effectiveness.get(move_type, {}).get(t, 1.0)
         return multiplier
 
-
-
-
-
-
-
-
-
+#usar um dicionario para calcular isso é uma solução bem elegante né

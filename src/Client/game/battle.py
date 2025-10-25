@@ -7,6 +7,8 @@ from rede.network import Network
 from rede.comunicacaoServer import ServerClient
 from game.move import Move
 
+#Gerenciador de batalha, recebe as comunicações e vai mudando o contexto
+
 class Battle:    
     class State:
         def __init__(self, my_player_name: str, opp_player_name: str, my_pokemon: Pokemon, opp_pokemon: Pokemon, my_turn: bool):
@@ -24,9 +26,10 @@ class Battle:
 
 
         @staticmethod
+        #calcula dano (sério?)
         def calculate_damage(move, attacker, defender):
         
-            # Poder base
+            # Poder base do move
             power = move.getPower()
 
             # Escolhe quais atributos usar
@@ -57,10 +60,10 @@ class Battle:
 
             #Variação aleatória (±15%)
             #random_factor = random.uniform(0.85, 1.0)
-                #Retirado pois daria mais trabalho sincronizar
+                #Retirado pois daria mais trabalho sincronizar (ia ter que mandar na mensagem)
 
 
-            # Fórmula final simplificada
+            #fórmula final simplificada (No pokemon de fato tem várias coisas que tiramos, tipo alguns status que afeatam dano recebido)
             damage = (((2 * 50 / 5 + 2) * power * (attack / defense)) / 50 + 2) * stab * type_effectiveness  #* random_factor
 
             logging.debug(damage)
@@ -163,7 +166,7 @@ class Battle:
         return True
 
 
-
+    #aqui ele utiliza a criptografia para enviar os json
     def send_encrypted(self, obj):
         assert self.shared_key is not None
         msg = Crypto.encrypt_json(self.shared_key, obj).encode()
@@ -176,7 +179,7 @@ class Battle:
         return Crypto.decrypt_json(self.shared_key, line.decode())
 
 
-
+    #Aqui o loop do jogo principal inicia
 
     def loop(self):
         if not self.state:
@@ -191,15 +194,15 @@ class Battle:
         
         try:
             while not self.state.finished():
-                if self.state.my_turn:
+                if self.state.my_turn: #roda se é meu turno
                     print("Seu turno! Seus movimentos:", ", ".join([move.capitalize() for move in self.my_pokemon.moves_str])) #Só captalizando pra ficar bonito
                    
                    
                    
-                    # Garante que apenas input novo após o prompt será considerado
+                    # Garante que apenas input novo após o prompt será considerado (meio que uma gambiarra)
                     Utils.adicionar_fila(self.input_queue, 'END')
-                    
                     Utils.drenar_fila(self.input_queue)
+
                     raw = self.input_queue.get(timeout=60)
                     move = raw.strip().lower()
                 
@@ -210,14 +213,17 @@ class Battle:
                 
                     self.send_encrypted({"type": "MOVE", "name": move})
                 
+
+                    #para economizar mensagem, não é enviado todo objeto move, só a string, então o get_move_by_name faz uma busca por esse nome e devolve o objetio
                     move_obj = self.pokedex.get_move_by_name(move)      
                     self.state.apply_move(move_obj, True)
                 
+
                     logging.info(f"Você usou {move}. HP oponente: {self.state.opp_hp}")
                     self.state.my_turn = False
                 
                 
-                
+                #roda se é o turno do oponentes
                 else:
                     self.conn.settimeout(70.0)
                     logging.info("Aguardando movimento do oponente...")
@@ -227,6 +233,7 @@ class Battle:
                     if msg.get('type') == 'MOVE':
                         
                         mv = msg.get('name')
+                        
                         move_obj = self.pokedex.get_move_by_name(mv)    
                         self.state.apply_move(move_obj, False)
                         
@@ -247,7 +254,7 @@ class Battle:
         winner = self.state.winner()
         logging.info(f"Resultado da batalha: {winner}")
         
-        #Para a main não ficar enchendo o saco com os enters vazios
+        #Para a main não ficar enchendo o saco com os enters vazios (mesma gambiarra)
         Utils.adicionar_fila(self.input_queue, 'END')
         Utils.drenar_fila(self.input_queue)
 

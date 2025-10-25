@@ -8,7 +8,11 @@ import logging
 import threading, queue, time, sys
 from utils import Utils
 
+#Obs: muita coisa a gente jogou aqui na main por questões de facilidade, mesmo que n seja uma boa prática (que bom que n é um trabalho de engenharia de software)
 
+#Como o código ficou grande, alguns comentarios foi o GPT que fez para evitar ficar descrevendo muita coisa
+
+#Foram no total +60 commits no github
 
 logging.basicConfig(level=logging.INFO, format='\n[%(levelname)s] %(message)s')
 
@@ -20,6 +24,9 @@ logging.basicConfig(level=logging.INFO, format='\n[%(levelname)s] %(message)s')
 
 import random
 import queue
+
+
+
 
 
 #Isso foi feito na main por motivos de facilidade
@@ -36,7 +43,7 @@ def choose_pokemon(pokedex: PokemonDB, input_queue: queue.Queue):
 
     while True:
         try:
-            # Espera até 60 segundos pela escolha do jogador
+            #espera até 60 segundos pela escolha do jogador
             choice = input_queue.get(timeout=60)
             
             if not choice:
@@ -64,7 +71,7 @@ def choose_pokemon(pokedex: PokemonDB, input_queue: queue.Queue):
 #Roda em uma thread separada para enviar mensagens periódicas ao servidor e manter a conexão viva.
 def send_keepalive(sock,input_queue, queue):
     while True:
-        time.sleep(20) # Envia a cada 20 segundos (Foi usado mais para teste, mas o tempo poderia ser menor)
+        time.sleep(20) #Envia a cada 20 segundos (Foi usado mais para teste, mas o tempo poderia ser menor)
         if not queue.get_battle_started():    
             try:
                 logging.debug("Enviado Keep alive.")
@@ -80,7 +87,7 @@ def send_keepalive(sock,input_queue, queue):
                 break # Encerra a thread se a conexão morrer
 
 
-
+#funçaõ auxiliar para os inputs
 def input_default(prompt, default):
     s = input(f"{prompt}").strip()
     return s if s else default
@@ -89,6 +96,7 @@ def input_default(prompt, default):
 
 def main():
     
+    #inputs automaticos (seja pelo arquivo ou depois pelo input)
     print("Uso fácil: python client.py <meu_nome> <ip_server> <porta_server> <minha_porta_udp> <minha_porta_tcp>")
     my_name = sys.argv[1] if len(sys.argv) > 1 else input("Seu nome: ").strip()
     server_ip = sys.argv[2] if len(sys.argv) > 2 else input_default("IP do servidor (Vazio para 127.0.0.1)", "127.0.0.1")
@@ -108,7 +116,7 @@ def main():
     server = ServerClient(server_ip, server_port)
 
 
-#Gerenciador do que ele receber de UDP
+#Gerenciador do que ele receber de UDP (vai ser jogado na thread)
     def udp_handler(msg, addr):
         try:
             #apagar
@@ -146,6 +154,8 @@ def main():
         logging.info("Erro, tente colocar um servidor válido")
         return
 
+
+    #gerenciador da fila de desafios
     queue_mgr = QueueManager(my_name, p2p_port, network, crypto, server_sock, udp_port, input_queue, pokedex)
     
     network.start_udp_listener(udp_handler)
@@ -288,6 +298,14 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+
+
+
+#Agente usava essa parte final para ir anotando o que ainda queriámos fazer:
+
+
 
 
     #O que falta (que provavelemtne não vai dar tempo):
