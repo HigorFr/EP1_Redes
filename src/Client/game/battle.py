@@ -64,6 +64,8 @@ class Battle:
 
 
             #fórmula final simplificada (No pokemon de fato tem várias coisas que tiramos, tipo alguns status que afeatam dano recebido)
+
+            #Aquela constante 2*50 a gente colocou para facilitar, mas no jogo de verdade aquilo é o Level (Ou seja, é como se todos pokemons fossem level 50 aqui)
             damage = (((2 * 50 / 5 + 2) * power * (attack / defense)) / 50 + 2) * stab * type_effectiveness  #* random_factor
 
             logging.debug(damage)
